@@ -5,6 +5,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import CreateCourierScreen from '../screens/CreateCourierScreen';
+import CourierListScreen from '../screens/CourierListScreen';
+import CourierDetailScreen from '../screens/CourierDetailScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -16,8 +19,7 @@ export default function AppNavigator() {
       try {
         const token = await AsyncStorage.getItem('token');
         setInitialRoute(token ? 'Dashboard' : 'Login');
-      } catch (e) {
-        console.log('Token check error:', e);
+      } catch {
         setInitialRoute('Login');
       }
     })();
@@ -33,22 +35,17 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName={initialRoute}
-        screenOptions={{ headerShown: false }}
-      >
+      <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Dashboard" component={DashboardScreen} />
+        <Stack.Screen name="CreateCourier" component={CreateCourierScreen} />
+        <Stack.Screen name="CourierList" component={CourierListScreen} />
+        <Stack.Screen name="CourierDetail" component={CourierDetailScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f7fa',
-  },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f7fa' },
 });
