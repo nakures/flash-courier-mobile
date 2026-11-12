@@ -1,16 +1,262 @@
 import { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, ScrollView, Pressable, StyleSheet,
-  ActivityIndicator, Alert, Platform,
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  NativeModules,
 } from 'react-native';
+import {
+  BluetoothManager,
+  BluetoothEscposPrinter,
+} from '@ccdilan/react-native-bluetooth-escpos-printer';
 import { authFetch } from '../services/api';
 
+// ============================================================
+// POS DETECTION
+// Primary: Q2i's "vbprinter" in paired Bluetooth list.
+// Fallback: Android model regex.
+// Cached so Bluetooth isn't scanned on every render.
+// ============================================================
+let _posCache = null;
+
+const detectPosDevice = async () => {
+  if (_posCache !== null) return _posCache;
+
+  if (Platform.OS !== 'android') {
+    _posCache = { isPos: false, printer: null };
+    return _posCache;
+  }
+
+  const model = NativeModules.PlatformConstants?.Model || '';
+  const modelLooksLikePos = /Q2i|GOOJPRT|POS|Sunmi|PAX|iMin/i.test(model);
+
+  let printer = null;
+  try {
+    if (BluetoothManager && typeof BluetoothManager.isBluetoothEnabled === 'function') {
+      const enabled = await BluetoothManager.isBluetoothEnabled();
+      if (enabled) {
+        const raw = await BluetoothManager.scanDevices();
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        printer = (parsed.paired || []).find((d) =>
+          /vbprinter/i.test(d.name || '')
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('POS detection Bluetooth scan failed:', e);
+  }
+
+  const isPos = !!printer || modelLooksLikePos;
+  _posCache = { isPos, printer, model };
+  console.log('🔎 POS DETECTION →', { isPos, printer, model });
+  return _posCache;
+};
+
+// ============================================================
+// ESC/POS silent print
+// ============================================================
+const printSilently = async (receipt, printer) => {
+  let connected = false;
+  try {
+    console.log('🖨️ PRINT START → printer:', printer);
+
+    if (!printer) {
+      return {
+        success: false,
+        error:
+          'vbprinter not found. Pair the Q2i built-in printer once in Android Settings → Bluetooth.',
+      };
+    }
+
+    const enabled = await BluetoothManager.isBluetoothEnabled();
+    if (!enabled) await BluetoothManager.enableBluetooth();
+
+    await BluetoothManager.connect(printer.address);
+    connected = true;
+    console.log('🖨️ CONNECTED to', printer.address);
+
+    await BluetoothEscposPrinter.printerInit();
+    console.log('🖨️ INIT OK');
+
+    await BluetoothEscposPrinter.printerAlign(
+      BluetoothEscposPrinter.ALIGN.CENTER
+    );
+
+    await BluetoothEscposPrinter.printText('FLASH COURIER\n', {
+      widthtimes: 2,
+      heigthtimes: 2,
+    });
+    await BluetoothEscposPrinter.printText(
+      'Fast • Secure • Reliable\n\n',
+      {}
+    );
+
+    await BluetoothEscposPrinter.printBarCode(
+      receipt.barcodeContent,
+      BluetoothEscposPrinter.BARCODETYPE.CODE128,
+      80,
+      2,
+      2,
+      2
+    );
+    await BluetoothEscposPrinter.printText('\n', {});
+    console.log('🖨️ BARCODE OK');
+
+    await BluetoothEscposPrinter.printText(
+      `CODE: ${receipt.courierCode}\n`,
+      { widthtimes: 1, heigthtimes: 1 }
+    );
+    await BluetoothEscposPrinter.printText(
+      '--------------------------------\n',
+      {}
+    );
+
+    await BluetoothEscposPrinter.printerAlign(
+      BluetoothEscposPrinter.ALIGN.LEFT
+    );
+
+    const lines = [
+      ['Send date', receipt.sendDate],
+      ['Created', receipt.createdAt],
+      ['From', receipt.fromLocation],
+      ['Sender', `${receipt.senderName} (${receipt.senderPhone})`],
+      ['Destination', receipt.destination],
+      [
+        'Recipient',
+        `${receipt.recipientName} (${receipt.recipientPhone})`,
+      ],
+      ['Type', receipt.typeName],
+      ['Price', `${receipt.price} FRW`],
+      ['Qty', receipt.quantity],
+      ['Time', receipt.sentTime],
+      ['Note', receipt.note],
+      ['Served by', receipt.fullname],
+    ];
+    for (const [label, value] of lines) {
+      await BluetoothEscposPrinter.printText(`${label}: ${value}\n`, {});
+    }
+    console.log('🖨️ BODY OK');
+
+    await BluetoothEscposPrinter.printText(
+      '--------------------------------\n',
+      {}
+    );
+    await BluetoothEscposPrinter.printText(
+      `TOTAL: ${receipt.amount} FRW\n`,
+      { widthtimes: 1, heigthtimes: 1 }
+    );
+    await BluetoothEscposPrinter.printText('\n', {});
+
+    await BluetoothEscposPrinter.printerAlign(
+      BluetoothEscposPrinter.ALIGN.CENTER
+    );
+    await BluetoothEscposPrinter.printQRCode(receipt.qrContent, 6, 1);
+    await BluetoothEscposPrinter.printText(
+      '\nThank you for choosing Flash Courier!\n\n\n',
+      {}
+    );
+    console.log('🖨️ QR + FOOTER OK');
+
+    // await BluetoothEscposPrinter.cutPaper();
+
+    await BluetoothManager.disconnect();
+    connected = false;
+    console.log('🖨️ PRINT DONE');
+
+    return { success: true };
+  } catch (e) {
+    console.error('🖨️ PRINT FAILED:', e);
+    if (connected) {
+      try {
+        await BluetoothManager.disconnect();
+      } catch (_) {}
+    }
+    return { success: false, error: e.message || 'Print error' };
+  }
+};
+
+// ============================================================
+// Response normalizer — handles all server shapes
+// ============================================================
+const normalizeCourierResponse = async (res) => {
+  let body = res;
+  if (
+    body &&
+    typeof body.json === 'function' &&
+    typeof body.status === 'number'
+  ) {
+    try {
+      body = await body.json();
+    } catch (e) {
+      throw new Error('Could not parse server response as JSON');
+    }
+  }
+  if (!body || typeof body !== 'object') {
+    throw new Error(`Empty response: ${String(res).slice(0, 200)}`);
+  }
+
+  const candidates = [
+    body.courier,
+    body.data && body.data.courier,
+    body.data,
+    body.result,
+    body,
+  ];
+
+  let courier = null;
+  for (const c of candidates) {
+    if (c && typeof c === 'object' && (c.courier_id || c.id || c.tracking)) {
+      courier = c;
+      break;
+    }
+  }
+
+  const explicitFail =
+    body.ok === false ||
+    body.success === false ||
+    (body.error && !courier);
+
+  if (explicitFail) {
+    throw new Error(
+      body.error || body.message || 'Server rejected courier creation'
+    );
+  }
+  if (!courier) {
+    throw new Error(
+      `Server did not return courier. Response: ${JSON.stringify(body).slice(
+        0,
+        300
+      )}`
+    );
+  }
+  if (!courier.id) {
+    courier.id = courier.courier_id || courier.tracking;
+  }
+
+  return {
+    courier,
+    sms:
+      (body.sms && (body.sms.status || body.sms)) ||
+      (courier.sms && (courier.sms.status || courier.sms)) ||
+      null,
+  };
+};
+
+// ============================================================
+// Screen
+// ============================================================
 export default function CreateCourierScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState(null);
+  const [posInfo, setPosInfo] = useState({ isPos: false, printer: null });
 
-  // Form state
   const [senderName, setSenderName] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [recipientName, setRecipientName] = useState('');
@@ -19,25 +265,40 @@ export default function CreateCourierScreen({ navigation }) {
   const [quantity, setQuantity] = useState('1');
   const [receivingAt, setReceivingAt] = useState('');
   const [partnerId, setPartnerId] = useState(null);
-  const [sendDate, setSendDate] = useState(new Date().toISOString().slice(0, 10));
+  const [sendDate, setSendDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
   const [sendingTime, setSendingTime] = useState('');
   const [note, setNote] = useState('');
-
-  // Derived
   const [price, setPrice] = useState('0');
   const [amount, setAmount] = useState('0');
 
-  // Load dropdown data
+  // Load form data + detect POS
   useEffect(() => {
     (async () => {
       try {
-        const data = await authFetch('courier_form_data.php');
+        const pos = await detectPosDevice();
+        setPosInfo({ isPos: pos.isPos, printer: pos.printer });
+
+        const raw = await authFetch('courier_form_data.php');
+        let data = raw;
+        if (
+          data &&
+          typeof data.json === 'function' &&
+          typeof data.status === 'number'
+        ) {
+          data = await data.json();
+        }
+        if (data && data.data && !data.types) data = data.data;
+        if (!data || !data.types) {
+          throw new Error('Invalid form data response');
+        }
         setFormData(data);
-        // Set defaults
-        if (data.types?.length) setTypeId(data.types[0].id);
+        if (data.types.length) setTypeId(data.types[0].id);
         if (data.partners?.length) setPartnerId(data.partners[0].id);
         if (data.schedules?.length) setSendingTime(data.schedules[0].time);
       } catch (e) {
+        console.error('Load error:', e);
         Alert.alert('Error', e.message || 'Failed to load form data');
       } finally {
         setLoading(false);
@@ -45,21 +306,26 @@ export default function CreateCourierScreen({ navigation }) {
     })();
   }, []);
 
-  // Update price/amount when type or quantity changes
+  // Recompute price
   useEffect(() => {
     if (!formData || !typeId) return;
-    const selectedType = formData.types.find((t) => t.id === typeId);
-    if (selectedType) {
-      const qty = parseFloat(quantity) || 1;
-      const total = selectedType.base_price * qty;
-      setPrice(selectedType.base_price.toFixed(0));
-      setAmount(total.toFixed(0));
-    }
+    const t = formData.types.find((x) => x.id === typeId);
+    if (!t) return;
+    const qty = parseFloat(quantity) || 1;
+    setPrice(t.base_price.toFixed(0));
+    setAmount((t.base_price * qty).toFixed(0));
   }, [typeId, quantity, formData]);
 
+  // ------------------------------------------------------------
+  // Submit
+  // ------------------------------------------------------------
   const handleSubmit = async () => {
-    // Validation
-    if (!senderName.trim() || !senderPhone.trim() || !recipientName.trim() || !recipientPhone.trim()) {
+    if (
+      !senderName.trim() ||
+      !senderPhone.trim() ||
+      !recipientName.trim() ||
+      !recipientPhone.trim()
+    ) {
       Alert.alert('Missing fields', 'Please fill sender and recipient details');
       return;
     }
@@ -67,10 +333,17 @@ export default function CreateCourierScreen({ navigation }) {
       Alert.alert('Missing destination', 'Please enter destination address');
       return;
     }
+    if (!sendDate || sendDate < new Date().toISOString().slice(0, 10)) {
+      Alert.alert('Invalid date', 'Send date cannot be in the past.');
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const data = await authFetch('create_courier.php', {
+      const pos = await detectPosDevice();
+      console.log('📱 isPos:', pos.isPos, 'printer:', pos.printer?.name);
+
+      const res = await authFetch('create_courier.php', {
         method: 'POST',
         body: JSON.stringify({
           sending_from: formData?.default_location?.id || null,
@@ -79,9 +352,9 @@ export default function CreateCourierScreen({ navigation }) {
           recipient_name: recipientName.trim(),
           recipient_phone: recipientPhone.trim(),
           type_id: typeId,
-          price: price,
-          quantity: quantity,
-          amount: amount,
+          price,
+          quantity,
+          amount,
           receiving_at: receivingAt.trim(),
           partner_id: partnerId,
           send_date: sendDate,
@@ -90,32 +363,91 @@ export default function CreateCourierScreen({ navigation }) {
         }),
       });
 
-      Alert.alert(
-        '✅ Success',
-        `Courier created!\nTracking: ${data.courier.tracking}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.replace('Dashboard'),
-          },
-        ]
-      );
+      console.log('CREATE COURIER RAW:', JSON.stringify(res));
+
+      const { courier, sms } = await normalizeCourierResponse(res);
+      const code = courier.courier_id || courier.tracking || courier.id;
+      console.log('✅ Courier created:', code, 'SMS:', sms);
+
+      const receipt = {
+        id: courier.id,
+        courierCode: code,
+        tracking: courier.tracking || code,
+        fromLocation: courier.location_name || courier.slocation || '-',
+        senderName: courier.sender_name || senderName,
+        senderPhone: courier.sender_phone || senderPhone,
+        recipientName: courier.recipient_name || recipientName,
+        recipientPhone: courier.recipient_phone || recipientPhone,
+        destination:
+          courier.receiving_at || courier.rlocation || receivingAt || '-',
+        typeName: courier.type_name || '-',
+        price: parseFloat(courier.price || 0).toLocaleString(),
+        quantity: courier.quantity || '1',
+        amount: parseFloat(courier.amount || 0).toLocaleString(),
+        sendDate: courier.send_date || sendDate,
+        sentTime: courier.sent_time || sendingTime,
+        note: courier.note || '-',
+        fullname: courier.created_by_name || courier.fullname || '',
+        createdAt: courier.created_at || new Date().toISOString(),
+        qrContent: `https://flashcourier.co.rw/reactflash/scan_invoice.php?invoice=${courier.id}`,
+        barcodeContent: String(courier.tracking || courier.id),
+      };
+
+      if (pos.isPos) {
+        if (!pos.printer) {
+          Alert.alert(
+            'Printer Not Found',
+            'This device is a POS, but "vbprinter" is not paired. Pair it in Settings → Bluetooth, then retry.',
+            [{ text: 'OK', onPress: () => navigation.replace('Dashboard') }]
+          );
+        } else {
+          const result = await printSilently(receipt, pos.printer);
+          if (result.success) {
+            Alert.alert('Success', `Courier ${code} created & printed.`, [
+              { text: 'OK', onPress: () => navigation.replace('Dashboard') },
+            ]);
+          } else {
+            Alert.alert(
+              'Print Failed',
+              result.error || 'Could not print receipt.',
+              [{ text: 'OK', onPress: () => navigation.replace('Dashboard') }]
+            );
+          }
+        }
+      } else {
+        Alert.alert('Success', `Courier ${code} created.`, [
+          { text: 'OK', onPress: () => navigation.replace('Dashboard') },
+        ]);
+      }
+
+      // Reset form
+      setSenderName('');
+      setSenderPhone('');
+      setRecipientName('');
+      setRecipientPhone('');
+      setReceivingAt('');
+      setNote('');
+      setQuantity('1');
+      setSendDate(new Date().toISOString().slice(0, 10));
     } catch (e) {
+      console.error('Create courier error:', e);
       Alert.alert('Failed to create courier', e.message || 'Unknown error');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // -------- Loading --------
   if (loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#008c8c" />
-        <Text style={styles.loadingText}>Loading form data...</Text>
+        <Text style={styles.loadingText}>Loading…</Text>
       </View>
     );
   }
 
+  // -------- Error --------
   if (!formData) {
     return (
       <View style={styles.center}>
@@ -127,16 +459,24 @@ export default function CreateCourierScreen({ navigation }) {
     );
   }
 
+  // -------- Form --------
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+    >
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={styles.backBtn}>← Back</Text>
         </Pressable>
         <Text style={styles.title}>New Courier</Text>
+        {posInfo.isPos && (
+          <Text style={styles.posBadge}>
+            {posInfo.printer ? '🖨️ POS' : '⚠️ POS (no printer)'}
+          </Text>
+        )}
       </View>
 
-      {/* Sender */}
       <Text style={styles.section}>Sender</Text>
       <TextInput
         style={styles.input}
@@ -154,7 +494,6 @@ export default function CreateCourierScreen({ navigation }) {
         onChangeText={setSenderPhone}
       />
 
-      {/* Recipient */}
       <Text style={styles.section}>Recipient</Text>
       <TextInput
         style={styles.input}
@@ -172,36 +511,46 @@ export default function CreateCourierScreen({ navigation }) {
         onChangeText={setRecipientPhone}
       />
 
-      {/* Destination */}
       <Text style={styles.section}>Destination</Text>
       <TextInput
         style={styles.input}
-        placeholder="Destination address (e.g., MUSANZE) *"
+        placeholder="Destination address (mandatory) *"
         placeholderTextColor="#999"
         value={receivingAt}
         onChangeText={setReceivingAt}
       />
 
-      {/* Courier type */}
       <Text style={styles.section}>Courier Type</Text>
       <View style={styles.optionsGrid}>
         {formData.types.map((t) => (
           <Pressable
             key={t.id}
-            style={[styles.optionBtn, typeId === t.id && styles.optionBtnActive]}
+            style={[
+              styles.optionBtn,
+              typeId === t.id && styles.optionBtnActive,
+            ]}
             onPress={() => setTypeId(t.id)}
           >
-            <Text style={[styles.optionText, typeId === t.id && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionText,
+                typeId === t.id && styles.optionTextActive,
+              ]}
+            >
               {t.type_name}
             </Text>
-            <Text style={[styles.optionPrice, typeId === t.id && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionPrice,
+                typeId === t.id && styles.optionTextActive,
+              ]}
+            >
               {t.base_price.toLocaleString()} RWF
             </Text>
           </Pressable>
         ))}
       </View>
 
-      {/* Quantity */}
       <Text style={styles.section}>Quantity</Text>
       <TextInput
         style={styles.input}
@@ -212,11 +561,12 @@ export default function CreateCourierScreen({ navigation }) {
         onChangeText={setQuantity}
       />
 
-      {/* Price summary */}
       <View style={styles.summary}>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Unit price</Text>
-          <Text style={styles.summaryValue}>{parseFloat(price).toLocaleString()} RWF</Text>
+          <Text style={styles.summaryValue}>
+            {parseFloat(price).toLocaleString()} RWF
+          </Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Quantity</Text>
@@ -224,30 +574,43 @@ export default function CreateCourierScreen({ navigation }) {
         </View>
         <View style={[styles.summaryRow, styles.summaryTotal]}>
           <Text style={styles.summaryTotalLabel}>Total</Text>
-          <Text style={styles.summaryTotalValue}>{parseFloat(amount).toLocaleString()} RWF</Text>
+          <Text style={styles.summaryTotalValue}>
+            {parseFloat(amount).toLocaleString()} RWF
+          </Text>
         </View>
       </View>
 
-      {/* Partner */}
       <Text style={styles.section}>Carrier Partner</Text>
       <View style={styles.optionsGrid}>
         {formData.partners.map((p) => (
           <Pressable
             key={p.id}
-            style={[styles.optionBtn, partnerId === p.id && styles.optionBtnActive]}
+            style={[
+              styles.optionBtn,
+              partnerId === p.id && styles.optionBtnActive,
+            ]}
             onPress={() => setPartnerId(p.id)}
           >
-            <Text style={[styles.optionText, partnerId === p.id && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionText,
+                partnerId === p.id && styles.optionTextActive,
+              ]}
+            >
               {p.partner_name}
             </Text>
-            <Text style={[styles.optionPrice, partnerId === p.id && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionPrice,
+                partnerId === p.id && styles.optionTextActive,
+              ]}
+            >
               {p.transport_type}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      {/* Send date */}
       <Text style={styles.section}>Send Date</Text>
       <TextInput
         style={styles.input}
@@ -257,23 +620,29 @@ export default function CreateCourierScreen({ navigation }) {
         onChangeText={setSendDate}
       />
 
-      {/* Sending time */}
       <Text style={styles.section}>Sending Time</Text>
       <View style={styles.optionsGrid}>
         {formData.schedules.map((s) => (
           <Pressable
             key={s.id}
-            style={[styles.optionBtn, sendingTime === s.time && styles.optionBtnActive]}
+            style={[
+              styles.optionBtn,
+              sendingTime === s.time && styles.optionBtnActive,
+            ]}
             onPress={() => setSendingTime(s.time)}
           >
-            <Text style={[styles.optionText, sendingTime === s.time && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionText,
+                sendingTime === s.time && styles.optionTextActive,
+              ]}
+            >
               {s.time}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      {/* Note */}
       <Text style={styles.section}>Note (optional)</Text>
       <TextInput
         style={[styles.input, styles.textArea]}
@@ -285,16 +654,21 @@ export default function CreateCourierScreen({ navigation }) {
         onChangeText={setNote}
       />
 
-      {/* Submit */}
       <Pressable
-        style={({ pressed }) => [styles.submitBtn, pressed && styles.submitBtnPressed, submitting && styles.submitBtnDisabled]}
+        style={({ pressed }) => [
+          styles.submitBtn,
+          pressed && styles.submitBtnPressed,
+          submitting && styles.submitBtnDisabled,
+        ]}
         onPress={handleSubmit}
         disabled={submitting}
       >
         {submitting ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.submitText}>Create Courier</Text>
+          <Text style={styles.submitText}>
+            {posInfo.isPos ? 'Create & Print' : 'Create Courier'}
+          </Text>
         )}
       </Pressable>
 
@@ -306,45 +680,99 @@ export default function CreateCourierScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   content: { padding: 20, paddingTop: 40, paddingBottom: 60 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f7fa' },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f7fa',
+  },
   loadingText: { marginTop: 12, color: '#666' },
   errorText: { color: '#c0392b', fontSize: 16 },
 
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   backBtn: { color: '#008c8c', fontSize: 15, fontWeight: '600', marginRight: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#222' },
+  title: { fontSize: 22, fontWeight: 'bold', color: '#222', flex: 1 },
+  posBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#008c8c',
+    backgroundColor: '#e6f4f4',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
 
-  section: { fontSize: 14, fontWeight: '600', color: '#333', marginTop: 16, marginBottom: 8 },
+  section: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 16,
+    marginBottom: 8,
+  },
 
   input: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd',
-    borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, marginBottom: 10, color: '#222',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    marginBottom: 10,
+    color: '#222',
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
 
   optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   optionBtn: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd',
-    borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14,
-    marginRight: 8, marginBottom: 8, minWidth: 100,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginRight: 8,
+    marginBottom: 8,
+    minWidth: 100,
   },
   optionBtnActive: { backgroundColor: '#008c8c', borderColor: '#008c8c' },
   optionText: { fontSize: 13, fontWeight: '600', color: '#333' },
   optionPrice: { fontSize: 11, color: '#888', marginTop: 2 },
   optionTextActive: { color: '#fff' },
 
-  summary: { backgroundColor: '#fff', padding: 16, borderRadius: 10, marginTop: 8, marginBottom: 8 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
+  summary: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 10,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
   summaryLabel: { fontSize: 14, color: '#666' },
   summaryValue: { fontSize: 14, fontWeight: '600', color: '#333' },
-  summaryTotal: { borderTopWidth: 1, borderTopColor: '#eee', marginTop: 6, paddingTop: 10 },
+  summaryTotal: {
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    marginTop: 6,
+    paddingTop: 10,
+  },
   summaryTotalLabel: { fontSize: 16, fontWeight: '700', color: '#333' },
   summaryTotalValue: { fontSize: 18, fontWeight: 'bold', color: '#008c8c' },
 
   submitBtn: {
-    backgroundColor: '#008c8c', paddingVertical: 16, borderRadius: 10,
-    alignItems: 'center', marginTop: 24,
+    backgroundColor: '#008c8c',
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 24,
   },
   submitBtnPressed: { backgroundColor: '#006e6e' },
   submitBtnDisabled: { opacity: 0.6 },
