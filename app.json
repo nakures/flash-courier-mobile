@@ -39,14 +39,15 @@
           "backgroundColor": "#ffffff"
         }
       ],
-     [
-  "expo-build-properties",
-  {
-    "android": {
-      "kotlinVersion": "2.2.20"
-    }
-  }
-]
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "2.2.20"
+          }
+        }
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

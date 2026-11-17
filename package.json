@@ -23,9 +23,10 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "9.2.1",
     "@react-navigation/native": "^7.5.1",
     "@react-navigation/native-stack": "^7.21.0",
-    "expo": "~58.0.25",
+    "expo": "~58.0.26",
     "expo-build-properties": "~58.0.12",
     "expo-print": "~58.0.9",
     "expo-splash-screen": "~58.0.14",
@@ -33,10 +34,9 @@
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-native": "0.88.1",
-    "react-native-bluetooth-classic": "^1.73.0-rc.17",
     "react-native-safe-area-context": "~5.11.1",
     "react-native-screens": "~4.30.1",
-    "react-native-thermal-printer-driver": "^0.1.1",
+    "rn-escpos-printer": "^1.0.2",
     "with-rn-bluetooth-classic": "^1.0.5"
   },
   "private": true,
