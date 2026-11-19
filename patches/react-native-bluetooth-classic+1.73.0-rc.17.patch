@@ -1,3 +1,21 @@
+diff --git a/node_modules/react-native-bluetooth-classic/android/build.gradle b/node_modules/react-native-bluetooth-classic/android/build.gradle
+index 0daf907..60fda6c 100644
+--- a/node_modules/react-native-bluetooth-classic/android/build.gradle
++++ b/node_modules/react-native-bluetooth-classic/android/build.gradle
+@@ -41,6 +41,13 @@ android {
+     }
+     sourceSets { main { java.srcDirs = ['src/main/java', 'src/main/tests'] } }
+ 
++    // ✅ FIX: Enable BuildConfig generation for AGP 8+
++    // Without this, `import kjd.reactnative.bluetooth.BuildConfig` fails
++    // because AGP 8 defaults buildFeatures.buildConfig to false.
++    buildFeatures {
++        buildConfig true
++    }
++
+     testOptions {
+         unitTests.returnDefaultValues = true
+     }
 diff --git a/node_modules/react-native-bluetooth-classic/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json b/node_modules/react-native-bluetooth-classic/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
 new file mode 100644
 index 0000000..9e26dfe
@@ -8,8 +26,7 @@ index 0000000..9e26dfe
 \ No newline at end of file
 diff --git a/node_modules/react-native-bluetooth-classic/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar b/node_modules/react-native-bluetooth-classic/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar
 new file mode 100644
-index 0000000..5ecedbc
-Binary files /dev/null and b/node_modules/react-native-bluetooth-classic/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar differ
+index 0000000..e69de29
 diff --git a/node_modules/react-native-bluetooth-classic/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt b/node_modules/react-native-bluetooth-classic/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt
 new file mode 100644
 index 0000000..e69de29
