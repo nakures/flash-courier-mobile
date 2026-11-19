@@ -1,51 +1,49 @@
+
 {
-  "name": "myfirstapp",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web",
-    "postinstall": "patch-package"
-  },
   "expo": {
+    "name": "Flash Courier",
+    "slug": "flash-courier-mobile",
+    "version": "1.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "rw.flashcourier.mobile"
     },
-    "doctor": {
-      "reactNativeDirectoryCheck": {
-        "exclude": [
-          "react-native-bluetooth-classic",
-          "react-native-thermal-printer-driver",
-          "with-rn-bluetooth-classic"
-        ],
-        "listUnknownPackages": false
+    "android": {
+      "package": "rw.flashcourier.mobile",
+      "versionCode": 12,
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "67841bba-cea6-4d93-b3f0-28e4205c65bd"
       }
     }
-  },
-  "dependencies": {
-    "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-community/datetimepicker": "9.2.1",
-    "@react-navigation/native": "^7.5.1",
-    "@react-navigation/native-stack": "^7.21.0",
-    "expo": "~58.0.26",
-    "expo-build-properties": "~58.0.12",
-    "expo-print": "~58.0.9",
-    "expo-splash-screen": "~58.0.14",
-    "expo-status-bar": "~58.0.5",
-    "qrcode": "^1.5.4",
-    "react": "19.3.0",
-    "react-native": "0.88.1",
-    "react-native-bluetooth-classic": "^1.73.0-rc.17",
-    "react-native-safe-area-context": "~5.11.1",
-    "react-native-screens": "~4.30.1",
-    "react-native-thermal-printer-driver": "^0.1.1",
-    "with-rn-bluetooth-classic": "^1.0.5"
-  },
-  "private": true,
-  "devDependencies": {
-    "patch-package": "^8.0.1"
   }
 }
