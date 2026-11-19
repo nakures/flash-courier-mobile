@@ -10,6 +10,10 @@
     "postinstall": "patch-package"
   },
   "expo": {
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "rw.flashcourier.mobile"
+    },
     "doctor": {
       "reactNativeDirectoryCheck": {
         "exclude": [
