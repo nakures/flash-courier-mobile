@@ -1,57 +1,44 @@
 {
   "expo": {
     "name": "Flash Courier",
-    "slug": "flash-courier",
-    "version": "1.0.0",
+    "slug": "flash-courier-mobile",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "rw.flashcourier.app"
+      "bundleIdentifier": "rw.flashcourier.mobile"
     },
     "android": {
-      "package": "rw.flashcourier.app",
-      "versionCode": 1,
+      "package": "rw.flashcourier.mobile",
+      "versionCode": 12,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
-        "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
-      "expo-status-bar",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/logo.png",
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "kotlinVersion": "2.2.20"
-          }
-        }
-      ],
-      "@react-native-community/datetimepicker"
+      "expo-splash-screen"
     ],
     "extra": {
       "eas": {
-        "projectId": "e6c6ff02-357b-4187-90f9-5fe9700637db"
+        "projectId": "67841bba-cea6-4d93-b3f0-28e4205c65bd"
       }
     }
   }

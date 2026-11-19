@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, ScrollView, Pressable, StyleSheet,
-  ActivityIndicator, FlatList, RefreshControl, KeyboardAvoidingView, Platform,
+  ActivityIndicator, FlatList, RefreshControl, KeyboardAvoidingView,
+  Platform, Keyboard,
 } from 'react-native';
 import { authFetch } from '../services/api';
 
@@ -28,6 +29,53 @@ export default function CourierListScreen({ navigation }) {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const debounceTimer = useRef(null);
 
+  // ============================================================
+  // HARDWARE BARCODE SCANNER
+  // ------------------------------------------------------------
+  // The Q2i scanner works in "keyboard emulation" mode: it
+  // types characters into the focused input and ends with Enter.
+  // We keep a hidden TextInput focused at all times to capture it.
+  // ============================================================
+  const hiddenInputRef = useRef(null);
+
+  const armScanner = useCallback(() => {
+    // Small delay so it runs after any animation / navigation settles
+    setTimeout(() => {
+      try {
+        hiddenInputRef.current?.focus();
+      } catch (_) {
+        /* ignore */
+      }
+    }, 150);
+  }, []);
+
+  const handleScanSubmit = useCallback((event) => {
+    const code = (event?.nativeEvent?.text || '').trim();
+    if (!code) return;
+
+    // Fill search box directly and skip debounce — filter immediately
+    setSearch(code);
+    setDebouncedSearch(code);
+
+    // Clear the hidden input so the next scan starts fresh
+    try {
+      hiddenInputRef.current?.clear();
+    } catch (_) {
+      /* ignore */
+    }
+
+    // Re-arm for the next scan
+    armScanner();
+  }, [armScanner]);
+
+  // Re-arm scanner whenever the screen gets focus
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', armScanner);
+    armScanner();
+    return unsub;
+  }, [navigation, armScanner]);
+
+  // Debounce manual typing in the real search box
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
@@ -37,6 +85,10 @@ export default function CourierListScreen({ navigation }) {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
   }, [search]);
+
+  // ============================================================
+  // DATA LOADING
+  // ============================================================
 
   const loadPage = useCallback(async (pageNum, replace = false) => {
     if (pageNum === 1) {
@@ -95,6 +147,16 @@ export default function CourierListScreen({ navigation }) {
     loadPage(page + 1);
   };
 
+  const handleClearSearch = () => {
+    setSearch('');
+    setDebouncedSearch('');
+    armScanner();
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+
   const renderItem = ({ item }) => (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
@@ -125,9 +187,21 @@ export default function CourierListScreen({ navigation }) {
       style={{ flex: 1, backgroundColor: '#f5f7fa' }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* ===== FIXED HEADER (Header + Search + Chips) ===== */}
+      {/* ===== HIDDEN SCANNER INPUT ===== */}
+      <TextInput
+        ref={hiddenInputRef}
+        style={styles.hiddenScannerInput}
+        onSubmitEditing={handleScanSubmit}
+        autoCorrect={false}
+        autoCapitalize="none"
+        showSoftInputOnFocus={false}
+        blurOnSubmit={false}
+        caretHidden
+        contextMenuHidden
+      />
+
+      {/* ===== FIXED HEADER ===== */}
       <View style={styles.fixedHeader}>
-        {/* Title row */}
         <View style={styles.header}>
           <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Text style={styles.backText}>← Back</Text>
@@ -136,7 +210,7 @@ export default function CourierListScreen({ navigation }) {
           <Text style={styles.count}>{total.toLocaleString()}</Text>
         </View>
 
-        {/* Search */}
+        {/* Search + Scan button */}
         <View style={styles.searchWrap}>
           <View style={styles.searchBox}>
             <Text style={styles.searchIcon}>🔍</Text>
@@ -149,13 +223,30 @@ export default function CourierListScreen({ navigation }) {
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
+              onFocus={() => {
+                // When user taps the real search box, stop arming the hidden one
+                // (the scanner would type here, which is fine — they'll see it live)
+              }}
+              onBlur={armScanner}
             />
             {search.length > 0 && (
-              <Pressable onPress={() => setSearch('')} style={styles.clearBtn}>
+              <Pressable onPress={handleClearSearch} style={styles.clearBtn}>
                 <Text style={styles.clearText}>✕</Text>
               </Pressable>
             )}
           </View>
+
+          {/* Re-arm scanner button */}
+          <Pressable
+            style={styles.scanBtn}
+            onPress={() => {
+              Keyboard.dismiss();
+              armScanner();
+            }}
+          >
+            <Text style={styles.scanIcon}>⎯⎯▮▮</Text>
+            <Text style={styles.scanLabel}>SCAN</Text>
+          </Pressable>
         </View>
 
         {/* Status chips */}
@@ -191,7 +282,7 @@ export default function CourierListScreen({ navigation }) {
         </View>
       ) : null}
 
-      {/* ===== LIST (flex: 1 fills remaining space) ===== */}
+      {/* ===== LIST ===== */}
       <View style={styles.listWrap}>
         {loading ? (
           <View style={styles.center}>
@@ -203,7 +294,7 @@ export default function CourierListScreen({ navigation }) {
             <Text style={styles.emptyIcon}>📭</Text>
             <Text style={styles.emptyText}>No couriers found</Text>
             {search || statusFilter ? (
-              <Pressable onPress={() => { setSearch(''); setStatusFilter(''); }}>
+              <Pressable onPress={() => { setSearch(''); setStatusFilter(''); setDebouncedSearch(''); armScanner(); }}>
                 <Text style={styles.retryText}>Clear filters</Text>
               </Pressable>
             ) : null}
@@ -260,12 +351,21 @@ function formatDate(iso) {
 }
 
 const styles = StyleSheet.create({
-  // ---------- FIXED HEADER STACK ----------
+  // ---------- HIDDEN SCANNER INPUT ----------
+  hiddenScannerInput: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+    top: -50,
+    left: -50,
+  },
+
+  // ---------- FIXED HEADER ----------
   fixedHeader: {
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    // No flex — this sizes to its content
   },
 
   // ---------- TITLE ROW ----------
@@ -281,12 +381,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: 'bold', color: '#222', flex: 1 },
   count: { fontSize: 13, color: '#008c8c', fontWeight: '600' },
 
-  // ---------- SEARCH ----------
+  // ---------- SEARCH + SCAN BUTTON ----------
   searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingBottom: 10,
+    gap: 8,
   },
   searchBox: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f0f2f5',
@@ -304,14 +408,20 @@ const styles = StyleSheet.create({
   clearBtn: { padding: 4, marginLeft: 4 },
   clearText: { fontSize: 14, color: '#999', fontWeight: '600' },
 
+  scanBtn: {
+    backgroundColor: '#008c8c',
+    borderRadius: 10,
+    height: 42,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanIcon: { color: '#fff', fontSize: 12, fontWeight: '700', letterSpacing: -1 },
+  scanLabel: { color: '#fff', fontSize: 9, fontWeight: '700', marginTop: 1 },
+
   // ---------- FILTER CHIPS ----------
-  chipsWrap: {
-    paddingBottom: 12,
-  },
-  chipsContainer: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
+  chipsWrap: { paddingBottom: 12 },
+  chipsContainer: { paddingHorizontal: 16, gap: 8 },
   chip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -334,11 +444,8 @@ const styles = StyleSheet.create({
   },
   chipTextActive: { color: '#fff' },
 
-  // ---------- LIST WRAPPER (critical for layout) ----------
-  listWrap: {
-    flex: 1,
-    // This ensures the list takes remaining space below the fixed header
-  },
+  // ---------- LIST ----------
+  listWrap: { flex: 1 },
   listContent: { padding: 16, paddingBottom: 40 },
 
   // ---------- CARDS ----------

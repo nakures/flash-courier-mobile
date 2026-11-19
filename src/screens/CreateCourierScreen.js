@@ -26,25 +26,28 @@ import DateTimePicker, {
 
 import { authFetch } from '../services/api';
 
+// Logo (Base64 generated from assets/icon-print.png, 240px wide)
+import { LOGO_BASE64 } from '../assets/logoBase64';
+
 // ============================================================
-// LAZY NATIVE MODULE LOADER
+// LAZY NATIVE MODULE LOADER (react-native-pos-printer)
 // ============================================================
 
-let EscPosPrinterModule = null;
+let PosPrinterModule = null;
 
-const getEscPos = async () => {
-  if (EscPosPrinterModule) return EscPosPrinterModule;
+const getPosPrinter = async () => {
+  if (PosPrinterModule) return PosPrinterModule;
 
   // eslint-disable-next-line global-require
-  const mod = require('rn-escpos-printer');
+  const mod = require('react-native-pos-printer');
 
-  EscPosPrinterModule = mod.EscPosPrinter || mod.default || mod;
+  PosPrinterModule = mod.default || mod.PosPrinter || mod;
 
-  if (!EscPosPrinterModule) {
-    throw new Error('rn-escpos-printer did not export EscPosPrinter.');
+  if (!PosPrinterModule) {
+    throw new Error('react-native-pos-printer did not export a printer.');
   }
 
-  return EscPosPrinterModule;
+  return PosPrinterModule;
 };
 
 // ============================================================
@@ -56,6 +59,7 @@ const API_CREATE = 'create_courier.php';
 
 const PRINTER_TIMEOUT = 20000;
 const DISCOVERY_TIMEOUT = 8000;
+const LOGO_TIMEOUT = 30000;
 
 // ============================================================
 // DATE / TIME HELPERS
@@ -187,16 +191,10 @@ const withTimeout = (promise, ms, label) =>
 const discoverPrinters = async () => {
   await requestBluetoothPermissions();
 
-  const EscPosPrinter = await getEscPos();
-
-  await withTimeout(
-    EscPosPrinter.initialize(),
-    DISCOVERY_TIMEOUT,
-    'Printer init'
-  );
+  const PosPrinter = await getPosPrinter();
 
   const devices = await withTimeout(
-    EscPosPrinter.getPrinters({ scanDurationMs: 4000 }),
+    PosPrinter.getAvailablePrinters('BLUETOOTH'),
     DISCOVERY_TIMEOUT,
     'Printer scan'
   );
@@ -205,58 +203,7 @@ const discoverPrinters = async () => {
 };
 
 // ============================================================
-// RECEIPT BUILDER
-// ============================================================
-
-const buildReceiptText = (receipt) => {
-  const line = '--------------------------------';
-
-  const rows = [
-    '',
-    '          FLASH COURIER',
-    '       Fast - Secure - Reliable',
-    line,
-    `COURIER CODE: ${receipt.courierCode}`,
-    `TRACKING: ${receipt.tracking}`,
-    line,
-    `SEND DATE: ${receipt.sendDate}`,
-    `SEND TIME: ${receipt.sentTime}`,
-    `CREATED: ${receipt.createdAt}`,
-    line,
-    'SENDER INFORMATION',
-    `Name: ${receipt.senderName}`,
-    `Phone: ${receipt.senderPhone}`,
-    `From: ${receipt.fromLocation}`,
-    line,
-    'RECIPIENT INFORMATION',
-    `Name: ${receipt.recipientName}`,
-    `Phone: ${receipt.recipientPhone}`,
-    `Destination: ${receipt.destination}`,
-    line,
-    'COURIER DETAILS',
-    `Type: ${receipt.typeName}`,
-    `Unit price: ${receipt.price} RWF`,
-    `Quantity: ${receipt.quantity}`,
-    `Served by: ${receipt.fullname || '-'}`,
-    `Note: ${receipt.note || '-'}`,
-    line,
-    `TOTAL: ${receipt.amount} RWF`,
-    line,
-    'TRACK YOUR COURIER',
-    'https://flashcourier.co.rw/reactflash/',
-    `scan_invoice.php?invoice=${receipt.id}`,
-    line,
-    'Thank you for choosing',
-    '        FLASH COURIER!',
-    '',
-    '',
-  ];
-
-  return rows.join('\n');
-};
-
-// ============================================================
-// PRINT RECEIPT
+// PRINT RECEIPT (logo + large code + body + QR + barcode)
 // ============================================================
 
 const printReceipt = async (receipt, printer) => {
@@ -267,37 +214,100 @@ const printReceipt = async (receipt, printer) => {
 
     await requestBluetoothPermissions();
 
-    const EscPosPrinter = await getEscPos();
+    const PosPrinter = await getPosPrinter();
 
     await withTimeout(
-      EscPosPrinter.initialize(),
-      DISCOVERY_TIMEOUT,
-      'Printer init'
-    );
-
-    await withTimeout(
-      EscPosPrinter.connect(printer, { timeoutMs: PRINTER_TIMEOUT }),
-      PRINTER_TIMEOUT + 2000,
+      PosPrinter.connectToPrinter(printer),
+      PRINTER_TIMEOUT,
       'Printer connect'
     );
 
     connected = true;
 
-    const isConnected = await EscPosPrinter.isConnected();
-    if (!isConnected) {
-      throw new Error('Printer connection could not be established.');
-    }
-
-    const receiptText = buildReceiptText(receipt);
-
+    // 1. Logo
     await withTimeout(
-      EscPosPrinter.printText(receiptText, {
-        codePage: 'cp850',
-        feedLines: 4,
-        cut: true,
+      PosPrinter.printImage(LOGO_BASE64, {
+        width: 200,
+        alignment: 'center',
+      }),
+      LOGO_TIMEOUT,
+      'Print logo'
+    );
+
+    // 2. Large courier code
+    await withTimeout(
+      PosPrinter.printText(`\n${receipt.courierCode}\n`, {
+        fontSize: 28,
+        alignment: 'center',
+        bold: true,
       }),
       PRINTER_TIMEOUT,
-      'Print'
+      'Print courier code'
+    );
+
+    // 3. Body
+    const line = '--------------------------------';
+    const body = [
+      line,
+      `TRACKING: ${receipt.tracking}`,
+      `SEND DATE: ${receipt.sendDate}`,
+      `SEND TIME: ${receipt.sentTime}`,
+      `CREATED: ${receipt.createdAt}`,
+      line,
+      'SENDER INFORMATION',
+      `Name: ${receipt.senderName}`,
+      `Phone: ${receipt.senderPhone}`,
+      `From: ${receipt.fromLocation}`,
+      line,
+      'RECIPIENT INFORMATION',
+      `Name: ${receipt.recipientName}`,
+      `Phone: ${receipt.recipientPhone}`,
+      `Destination: ${receipt.destination}`,
+      line,
+      'COURIER DETAILS',
+      `Type: ${receipt.typeName}`,
+      `Unit price: ${receipt.price} RWF`,
+      `Quantity: ${receipt.quantity}`,
+      `Served by: ${receipt.fullname || '-'}`,
+      `Note: ${receipt.note || '-'}`,
+      line,
+      `TOTAL: ${receipt.amount} RWF`,
+      line,
+    ].join('\n');
+
+    await withTimeout(
+      PosPrinter.printText(body, { alignment: 'left' }),
+      PRINTER_TIMEOUT,
+      'Print body'
+    );
+
+    // 4. QR code — full tracking URL
+    const trackUrl = `https://flashcourier.co.rw/reactflash/scan_invoice.php?invoice=${receipt.id}`;
+    await withTimeout(
+      PosPrinter.printQRCode(trackUrl, {
+        size: 6,
+        errorCorrection: 1,
+      }),
+      PRINTER_TIMEOUT,
+      'Print QR'
+    );
+
+    // 5. Barcode — courier code in CODE128
+    await withTimeout(
+      PosPrinter.printBarcode(String(receipt.courierCode), 'code128', {
+        width: 2,
+        height: 80,
+        printText: true,
+      }),
+      PRINTER_TIMEOUT,
+      'Print barcode'
+    );
+
+    // 6. Footer
+    await withTimeout(
+      PosPrinter.printText('\nThank you for choosing FLASH COURIER!\n'),
+      PRINTER_TIMEOUT,
+      'Print footer'
     );
 
     return { success: true, error: null };
@@ -309,8 +319,8 @@ const printReceipt = async (receipt, printer) => {
   } finally {
     if (connected) {
       try {
-        const EscPosPrinter = await getEscPos();
-        await EscPosPrinter.disconnect();
+        const PosPrinter = await getPosPrinter();
+        await PosPrinter.disconnectPrinter();
       } catch (_) {
         /* swallow */
       }
@@ -566,7 +576,6 @@ export default function CreateCourierScreen({ navigation }) {
       if (data.types.length > 0) setTypeId(data.types[0].id);
       if (data.partners.length > 0) setPartnerId(data.partners[0].id);
 
-      // sendingTime intentionally left empty — user must pick via clock
       setSendingTime('');
     } catch (error) {
       if (!mountedRef.current) return;
@@ -918,7 +927,7 @@ export default function CreateCourierScreen({ navigation }) {
                 <Text style={styles.deviceText}>Available Bluetooth devices:</Text>
                 {printerOptions.map((printer) => (
                   <Pressable
-                    key={printer.id}
+                    key={printer.id || printer.address}
                     style={[
                       styles.printerOption,
                       printer.active && styles.printerOptionActive,
@@ -932,7 +941,7 @@ export default function CreateCourierScreen({ navigation }) {
                           printer.active && styles.optionTextActive,
                         ]}
                       >
-                        {printer.name || 'Unknown printer'}
+                        {printer.name || printer.deviceName || 'Unknown printer'}
                       </Text>
                       <Text
                         style={[
@@ -940,7 +949,7 @@ export default function CreateCourierScreen({ navigation }) {
                           printer.active && styles.optionTextActive,
                         ]}
                       >
-                        {printer.address}
+                        {printer.address || printer.macAddress}
                       </Text>
                     </View>
                     <Text
@@ -961,7 +970,7 @@ export default function CreateCourierScreen({ navigation }) {
               Select the printer from the list.
             </Text>
             <Text style={styles.selectedPrinter}>
-              Selected: {selectedPrinter?.name || 'No printer selected'}
+              Selected: {selectedPrinter?.name || selectedPrinter?.deviceName || 'No printer selected'}
             </Text>
           </View>
         )}
@@ -1117,8 +1126,6 @@ export default function CreateCourierScreen({ navigation }) {
             }}
           />
         )}
-
-        {/* Schedule shortcuts removed — sending time is picked only via clock */}
 
         <Text style={styles.section}>Additional Note (Optional)</Text>
         <TextInput
