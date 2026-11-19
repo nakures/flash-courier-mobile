@@ -1,6 +1,7 @@
 {
   "cli": {
-    "requireCommit": true
+    "requireCommit": true,
+    "appVersionSource": "remote"
   },
   "build": {
     "preview": {
