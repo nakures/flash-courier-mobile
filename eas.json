@@ -3,6 +3,7 @@
     "requireCommit": true,
     "appVersionSource": "remote"
   },
+  
   "build": {
     "preview": {
       "distribution": "internal",
