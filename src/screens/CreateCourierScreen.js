@@ -42,8 +42,8 @@ const PRINTER_TIMEOUT = 20000;
 const DISCOVERY_TIMEOUT = 8000;
 const LOGO_TIMEOUT = 30000;
 
-const PRINTER_NAME_HINT = 'VBTPRINTER'; // Q2i built-in BT printer
-const CHARS_PER_LINE = 32;              // 58 mm @ 203 dpi
+const PRINTER_NAME_HINT = 'VBTPRINTER';
+const CHARS_PER_LINE = 32;
 
 // ============================================================
 // DATE / TIME HELPERS
@@ -58,17 +58,12 @@ const getLocalDate = () => {
 
 const normalizeCalendarDate = (value) => {
   if (!value || typeof value !== 'string') return null;
-
   const trimmed = value.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
-
   const [year, month, day] = trimmed.split('-').map(Number);
-
   if (year < 1900 || year > 2999 || month < 1 || month > 12) return null;
-
   const daysInMonth = new Date(year, month, 0).getDate();
   if (day < 1 || day > daysInMonth) return null;
-
   return trimmed;
 };
 
@@ -88,28 +83,23 @@ const stringToTime = (value) => {
   if (!value) return new Date();
   const match = String(value).match(/(\d{1,2}):(\d{2})/);
   if (!match) return new Date();
-
   const result = new Date();
   result.setHours(Number(match[1]), Number(match[2]), 0, 0);
   return result;
 };
 
-const formatMoney = (value) =>
-  Number(value || 0).toLocaleString('en-US');
+const formatMoney = (value) => Number(value || 0).toLocaleString('en-US');
 
 const normalizeId = (value) => String(value ?? '');
 
 const formatTimeForDisplay = (value) => {
   if (!value) return 'Select sending time';
-
   const match = String(value).match(/(\d{1,2}):(\d{2})/);
   if (!match) return value;
-
   const hours = Number(match[1]);
   const minutes = match[2];
   const suffix = hours >= 12 ? 'PM' : 'AM';
   const displayHour = hours % 12 || 12;
-
   return `${displayHour}:${minutes} ${suffix}`;
 };
 
@@ -121,21 +111,16 @@ const requestBluetoothPermissions = async () => {
   if (Platform.OS !== 'android') {
     throw new Error('Bluetooth printing is only available on Android.');
   }
-
   const sdkInt = Number(Platform.Version) || 0;
-
   if (sdkInt >= 31) {
     const perms = [
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
     ].filter(Boolean);
-
     const results = await PermissionsAndroid.requestMultiple(perms);
-
     const allGranted = perms.every(
       (p) => results[p] === PermissionsAndroid.RESULTS.GRANTED
     );
-
     if (!allGranted) {
       throw new Error(
         'Bluetooth permission denied. Enable Nearby Devices access in Android settings.'
@@ -143,17 +128,13 @@ const requestBluetoothPermissions = async () => {
     }
   } else {
     const perm = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
-
     if (perm) {
       const result = await PermissionsAndroid.request(perm);
       if (result !== PermissionsAndroid.RESULTS.GRANTED) {
-        throw new Error(
-          'Location permission is required for Bluetooth access.'
-        );
+        throw new Error('Location permission is required for Bluetooth access.');
       }
     }
   }
-
   return true;
 };
 
@@ -165,111 +146,112 @@ const withTimeout = (promise, ms, label) =>
   Promise.race([
     promise,
     new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`${label} timed out after ${ms}ms`)),
-        ms
-      )
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
     ),
   ]);
 
 // ============================================================
-// ESC/POS CONSTANTS
+// ESC/POS BYTE BUILDERS
 // ============================================================
 
-const ESC = '\x1B';
-const GS = '\x1D';
-const LF = '\n';
+const LF_BYTE = 0x0A;
+const ESC = 0x1B;
+const GS = 0x1D;
 
-const INIT = `${ESC}@`;
-const ALIGN_LFT = `${ESC}a\x00`;
-const ALIGN_CTR = `${ESC}a\x01`;
-const BOLD_ON = `${ESC}E\x01`;
-const BOLD_OFF = `${ESC}E\x00`;
-const SIZE_DBL = `${GS}!\x11`; // double width + double height
-const SIZE_NRM = `${GS}!\x00`;
-const FEED = `${ESC}d\x03`;
-const CUT = `${GS}V\x41\x03`;
+const INIT_BYTES = [ESC, 0x40]; // ESC @
+const ALIGN_LFT = [ESC, 0x61, 0x00]; // ESC a 0
+const ALIGN_CTR = [ESC, 0x61, 0x01]; // ESC a 1
+const BOLD_ON = [ESC, 0x45, 0x01]; // ESC E 1
+const BOLD_OFF = [ESC, 0x45, 0x00]; // ESC E 0
+const SIZE_DBL = [GS, 0x21, 0x11]; // GS ! 17
+const SIZE_NRM = [GS, 0x21, 0x00]; // GS ! 0
+const FEED = [ESC, 0x64, 0x03]; // ESC d 3
+const CUT = [GS, 0x56, 0x41, 0x03]; // GS V A 3
 
-const separator = () => '-'.repeat(CHARS_PER_LINE) + LF;
+// Convert ASCII string to byte array. Non-ASCII chars (>127) are replaced with '?'.
+const asciiBytes = (str) => {
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    out.push(code <= 0x7F ? code : 0x3F); // '?' for non-ASCII
+  }
+  return out;
+};
 
-const padRow = (label, value) => {
+// Concatenate multiple byte arrays
+const concatBytes = (...arrays) => {
+  const out = [];
+  for (const arr of arrays) {
+    for (const b of arr) out.push(b);
+  }
+  return out;
+};
+
+const separatorBytes = () =>
+  asciiBytes('-'.repeat(CHARS_PER_LINE) + '\n');
+
+const padRowBytes = (label, value) => {
   const l = String(label);
   const r = String(value);
   const dots = Math.max(1, CHARS_PER_LINE - l.length - r.length);
-  return l + '.'.repeat(dots) + r + LF;
+  return asciiBytes(l + '.'.repeat(dots) + r + '\n');
 };
 
 // ---------- QR CODE: native GS ( k, Model 2 ----------
-// This is the correct form for VBTPRINTER firmware.
-const escposQR = (data, moduleSize = 6, ecByte = 0x31 /* M */) => {
-  const payload = String(data);
+const qrBytes = (data, moduleSize = 6, ecByte = 0x31) => {
+  const payload = asciiBytes(String(data));
   const len = payload.length + 3;
-  const pL = String.fromCharCode(len & 0xff);
-  const pH = String.fromCharCode((len >> 8) & 0xff);
+  const pL = len & 0xff;
+  const pH = (len >> 8) & 0xff;
 
-  return (
-    `${GS}(k\x04\x00\x31\x41\x32\x00` +              // select model 2
-    `${GS}(k\x03\x00\x31\x43${String.fromCharCode(moduleSize)}` + // module size
-    `${GS}(k\x03\x00\x31\x45${String.fromCharCode(ecByte)}` +     // EC level
-    `${GS}(k${pL}${pH}\x31\x50\x30${payload}` +      // store data
-    `${GS}(k\x03\x00\x31\x51\x30`                    // print
+  return concatBytes(
+    [GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00], // model 2
+    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, moduleSize], // module size
+    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, ecByte], // EC level M
+    [GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30], // store data header
+    payload,
+    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30] // print
   );
 };
 
 // ---------- BARCODE: native GS k m=73 (CODE128 fn B) ----------
-// m=73 is the command VBTPRINTER firmware accepts for CODE128.
-const escposCode128 = (data) => {
-  const text = String(data);
-  return (
-    `${GS}h\x50` +                                   // height = 80 dots
-    `${GS}w\x02` +                                   // module width = 2
-    `${GS}H\x02` +                                   // HRI text below
-    `${GS}f\x00` +                                   // font A for HRI
-    `${GS}k\x49${String.fromCharCode(text.length)}${text}`
+const code128Bytes = (data) => {
+  const text = asciiBytes(String(data));
+  return concatBytes(
+    [GS, 0x68, 0x50], // GS h 80 (height)
+    [GS, 0x77, 0x02], // GS w 2 (width)
+    [GS, 0x48, 0x02], // GS H 2 (HRI below)
+    [GS, 0x66, 0x00], // GS f 0 (font A)
+    [GS, 0x6B, 0x49, text.length], // GS k 73 len
+    text
   );
 };
 
-// ---------- LOGO RASTER (GS v 0) ----------
-// We decode the PNG from base64 using a tiny PNG parser is overkill —
-// instead we render the base64 via Hermes-safe JPEG/PNG decoder at build
-// time is not available. So we ship a compact 1bpp buffer built by
-// converting the PNG at runtime is also too heavy. The reliable path is:
-// skip raster and print the courier code as the visual header (below).
-// If you want a real logo, replace LOGO_BASE64 with a pre-generated
-// ESC/POS raster string (base64 of the GS v 0 payload) and use it here:
-const printLogoRaster = async (printer, write) => {
-  if (!LOGO_BASE64 || typeof LOGO_BASE64 !== 'string') return;
-  // Placeholder: your LOGO_BASE64 currently holds PNG bytes for
-  // react-native-pos-printer. For the new stack, generate an ESC/POS
-  // raster (GS v 0) from the PNG offline and store it as
-  // LOGO_ESCPOS_BASE64, then decode and write. For now we skip to avoid
-  // printing garbage and fall back to the big courier code header.
+// ---------- LOGO RASTER (disabled — PNG not usable here) ----------
+const printLogoRaster = async (_printer, _write) => {
+  // Placeholder — your LOGO_BASE64 is PNG, not ESC/POS raster.
+  // Skipping avoids printing garbage. Big courier code header acts as visual ID.
   return;
 };
 
 // ============================================================
-// PRINTER DISCOVERY (react-native-bluetooth-classic)
+// PRINTER DISCOVERY
 // ============================================================
 
 const discoverPrinters = async () => {
   await requestBluetoothPermissions();
-
   const bonded = await withTimeout(
     RNBluetoothClassic.getBondedDevices(),
     DISCOVERY_TIMEOUT,
     'Printer scan'
   );
-
   if (!Array.isArray(bonded)) return [];
 
-  // Sort VBTPRINTER / PRINTER-named devices first.
   const sorted = [...bonded].sort((a, b) => {
     const an = (a.name || '').toUpperCase();
     const bn = (b.name || '').toUpperCase();
-    const aScore =
-      an.includes(PRINTER_NAME_HINT) ? 0 : an.includes('PRINTER') ? 1 : 2;
-    const bScore =
-      bn.includes(PRINTER_NAME_HINT) ? 0 : bn.includes('PRINTER') ? 1 : 2;
+    const aScore = an.includes(PRINTER_NAME_HINT) ? 0 : an.includes('PRINTER') ? 1 : 2;
+    const bScore = bn.includes(PRINTER_NAME_HINT) ? 0 : bn.includes('PRINTER') ? 1 : 2;
     return aScore - bScore;
   });
 
@@ -279,6 +261,29 @@ const discoverPrinters = async () => {
     name: d.name || 'Unknown device',
     deviceName: d.name || 'Unknown device',
   }));
+};
+
+// ============================================================
+// BYTE → BASE64 (Hermes-safe, no TextEncoder needed)
+// ============================================================
+
+const B64_CHARS =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+const bytesToBase64 = (bytes) => {
+  let out = '';
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < len ? bytes[i + 1] : 0;
+    const b2 = i + 2 < len ? bytes[i + 2] : 0;
+
+    out += B64_CHARS[b0 >> 2];
+    out += B64_CHARS[((b0 & 0x03) << 4) | (b1 >> 4)];
+    out += i + 1 < len ? B64_CHARS[((b1 & 0x0F) << 2) | (b2 >> 6)] : '=';
+    out += i + 2 < len ? B64_CHARS[b2 & 0x3F] : '=';
+  }
+  return out;
 };
 
 // ============================================================
@@ -298,14 +303,13 @@ const printReceipt = async (receipt, printer) => {
 
     await requestBluetoothPermissions();
 
-    // Connect over Classic Bluetooth SPP (RFCOMM)
+    // Connect over Classic Bluetooth SPP (RFCOMM).
+    // IMPORTANT: do NOT specify DEVICE_CHARSET here. We'll send base64.
     const already = await RNBluetoothClassic.isDeviceConnected(address);
-
     if (!already) {
       await withTimeout(
         RNBluetoothClassic.connectToDevice(address, {
           CONNECTOR_TYPE: 'rfcomm',
-          DEVICE_CHARSET: 'ISO-8859-1', // critical for ESC/POS byte correctness
         }),
         PRINTER_TIMEOUT,
         'Printer connect'
@@ -314,89 +318,100 @@ const printReceipt = async (receipt, printer) => {
 
     connected = true;
 
-    const write = async (payload) => {
-      // Always write ESC/POS bytes as ISO-8859-1 so multi-byte
-      // control sequences survive the Bluetooth socket.
-      await RNBluetoothClassic.writeToDevice(
-        address,
-        payload,
-        'ISO-8859-1'
-      );
+    // Hermes natively supports base64 encoding.
+    // We convert our byte arrays to base64 before sending.
+    const write = async (bytesOrArray) => {
+      const bytes = Array.isArray(bytesOrArray) ? bytesOrArray : [bytesOrArray];
+      const b64 = bytesToBase64(bytes);
+      await RNBluetoothClassic.writeToDevice(address, b64, 'base64');
     };
 
     // ---------- 1. Logo (optional) ----------
     try {
       await withTimeout(printLogoRaster(printer, write), LOGO_TIMEOUT, 'Print logo');
     } catch (_) {
-      /* logo is optional; proceed */
+      /* logo is optional */
     }
 
     // ---------- 2. Initialize + header ----------
-    let buf = '';
-    buf += INIT;
-    buf += ALIGN_CTR + BOLD_ON + SIZE_DBL;
-    buf += 'FLASH COURIER' + LF;
-    buf += SIZE_NRM + BOLD_OFF;
-    buf += separator();
-    await write(buf);
+    await write(concatBytes(
+      INIT_BYTES,
+      ALIGN_CTR,
+      BOLD_ON,
+      SIZE_DBL,
+      asciiBytes('FLASH COURIER\n'),
+      SIZE_NRM,
+      BOLD_OFF,
+      separatorBytes()
+    ));
 
     // ---------- 3. Large courier code ----------
-    await write(
-      ALIGN_CTR + BOLD_ON + SIZE_DBL + `${receipt.courierCode}` + LF + SIZE_NRM + BOLD_OFF
-    );
+    await write(concatBytes(
+      ALIGN_CTR,
+      BOLD_ON,
+      SIZE_DBL,
+      asciiBytes(`${receipt.courierCode}\n`),
+      SIZE_NRM,
+      BOLD_OFF
+    ));
 
     // ---------- 4. Body ----------
-    let body = '';
-    body += ALIGN_LFT;
-    body += padRow('TRACKING', receipt.tracking);
-    body += padRow('SEND DATE', receipt.sendDate);
-    body += padRow('SEND TIME', receipt.sentTime);
-    body += padRow('CREATED', receipt.createdAt);
-    body += separator();
-    body += 'SENDER INFORMATION' + LF;
-    body += padRow('Name', receipt.senderName);
-    body += padRow('Phone', receipt.senderPhone);
-    body += padRow('From', receipt.fromLocation);
-    body += separator();
-    body += 'RECIPIENT INFORMATION' + LF;
-    body += padRow('Name', receipt.recipientName);
-    body += padRow('Phone', receipt.recipientPhone);
-    body += padRow('Dest', receipt.destination);
-    body += separator();
-    body += 'COURIER DETAILS' + LF;
-    body += padRow('Type', receipt.typeName);
-    body += padRow('Unit', `${receipt.price} RWF`);
-    body += padRow('Qty', receipt.quantity);
-    body += padRow('Served by', receipt.fullname || '-');
-    body += padRow('Note', receipt.note || '-');
-    body += separator();
-    body += BOLD_ON + `TOTAL: ${receipt.amount} RWF` + LF + BOLD_OFF;
-    body += separator();
+    let body = [];
+    body = body.concat(ALIGN_LFT);
+    body = body.concat(padRowBytes('TRACKING', receipt.tracking));
+    body = body.concat(padRowBytes('SEND DATE', receipt.sendDate));
+    body = body.concat(padRowBytes('SEND TIME', receipt.sentTime));
+    body = body.concat(padRowBytes('CREATED', receipt.createdAt));
+    body = body.concat(separatorBytes());
+    body = body.concat(asciiBytes('SENDER INFORMATION\n'));
+    body = body.concat(padRowBytes('Name', receipt.senderName));
+    body = body.concat(padRowBytes('Phone', receipt.senderPhone));
+    body = body.concat(padRowBytes('From', receipt.fromLocation));
+    body = body.concat(separatorBytes());
+    body = body.concat(asciiBytes('RECIPIENT INFORMATION\n'));
+    body = body.concat(padRowBytes('Name', receipt.recipientName));
+    body = body.concat(padRowBytes('Phone', receipt.recipientPhone));
+    body = body.concat(padRowBytes('Dest', receipt.destination));
+    body = body.concat(separatorBytes());
+    body = body.concat(asciiBytes('COURIER DETAILS\n'));
+    body = body.concat(padRowBytes('Type', receipt.typeName));
+    body = body.concat(padRowBytes('Unit', `${receipt.price} RWF`));
+    body = body.concat(padRowBytes('Qty', receipt.quantity));
+    body = body.concat(padRowBytes('Served by', receipt.fullname || '-'));
+    body = body.concat(padRowBytes('Note', receipt.note || '-'));
+    body = body.concat(separatorBytes());
+    body = body.concat(BOLD_ON);
+    body = body.concat(asciiBytes(`TOTAL: ${receipt.amount} RWF\n`));
+    body = body.concat(BOLD_OFF);
+    body = body.concat(separatorBytes());
     await write(body);
 
-    // ---------- 5. QR CODE (native GS ( k) ----------
+    // ---------- 5. QR CODE ----------
     const trackUrl = `https://flashcourier.co.rw/reactflash/scan_invoice.php?invoice=${receipt.id}`;
-    await write(ALIGN_CTR + 'SCAN TO TRACK' + LF);
+    await write(concatBytes(ALIGN_CTR, asciiBytes('SCAN TO TRACK\n')));
     await withTimeout(
-      write(escposQR(trackUrl, 6)),
+      write(qrBytes(trackUrl, 6)),
       PRINTER_TIMEOUT,
       'Print QR'
     );
-    await write(LF);
+    await write([LF_BYTE]);
 
-    // ---------- 6. BARCODE (native GS k m=73 CODE128) ----------
-    await write(ALIGN_CTR + 'COURIER CODE' + LF);
+    // ---------- 6. BARCODE ----------
+    await write(concatBytes(ALIGN_CTR, asciiBytes('COURIER CODE\n')));
     await withTimeout(
-      write(escposCode128(receipt.courierCode)),
+      write(code128Bytes(receipt.courierCode)),
       PRINTER_TIMEOUT,
       'Print barcode'
     );
-    await write(LF);
+    await write([LF_BYTE]);
 
     // ---------- 7. Footer + cut ----------
-    await write(
-      ALIGN_CTR + LF + 'Thank you for choosing FLASH COURIER!' + LF + FEED + CUT
-    );
+    await write(concatBytes(
+      ALIGN_CTR,
+      asciiBytes('\nThank you for choosing FLASH COURIER!\n'),
+      FEED,
+      CUT
+    ));
 
     return { success: true, error: null };
   } catch (error) {
@@ -421,55 +436,35 @@ const printReceipt = async (receipt, printer) => {
 
 const normalizeCourierResponse = async (response) => {
   let body = response;
-
   if (body && typeof body.json === 'function') {
     if (body.ok === false) {
       throw new Error(`Server error: HTTP ${body.status || 'unknown'}`);
     }
     body = await body.json();
   }
-
   if (!body || typeof body !== 'object') {
     throw new Error('Empty server response.');
   }
-
-  const candidates = [
-    body.courier,
-    body.data?.courier,
-    body.data,
-    body.result,
-    body,
-  ];
-
+  const candidates = [body.courier, body.data?.courier, body.data, body.result, body];
   let courier = null;
   for (const c of candidates) {
-    if (
-      c &&
-      typeof c === 'object' &&
-      (c.courier_id || c.id || c.tracking)
-    ) {
+    if (c && typeof c === 'object' && (c.courier_id || c.id || c.tracking)) {
       courier = c;
       break;
     }
   }
-
   if (body.ok === false || body.success === false || (body.error && !courier)) {
-    throw new Error(
-      body.error || body.message || 'Server rejected courier creation.'
-    );
+    throw new Error(body.error || body.message || 'Server rejected courier creation.');
   }
-
   if (!courier) {
     throw new Error(
       'No courier information returned by server: ' +
         JSON.stringify(body).slice(0, 300)
     );
   }
-
   const sms =
     body.sms?.status || body.sms ||
     courier.sms?.status || courier.sms || null;
-
   return {
     courier: {
       ...courier,
@@ -495,55 +490,37 @@ export default function CreateCourierScreen({ navigation }) {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
   const submitLock = useRef(false);
 
   const [formData, setFormData] = useState(null);
-
   const [senderName, setSenderName] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
-
   const [typeId, setTypeId] = useState(null);
   const [quantity, setQuantity] = useState('1');
-
   const [receivingAt, setReceivingAt] = useState('');
   const [partnerId, setPartnerId] = useState(null);
-
   const [sendDate, setSendDate] = useState(getLocalDate());
   const [sendingTime, setSendingTime] = useState('');
-
   const [note, setNote] = useState('');
-
   const [price, setPrice] = useState('0');
   const [amount, setAmount] = useState('0');
-
   const [printers, setPrinters] = useState([]);
   const [selectedPrinter, setSelectedPrinter] = useState(null);
   const [discovering, setDiscovering] = useState(false);
   const [printing, setPrinting] = useState(false);
-
   const [showIOSDatePicker, setShowIOSDatePicker] = useState(false);
   const [showIOSTimePicker, setShowIOSTimePicker] = useState(false);
-
-  // ----------------------------------------------------------
-  // SAFE SETTERS
-  // ----------------------------------------------------------
 
   const safeSet = useCallback((setter, value) => {
     if (mountedRef.current) setter(value);
   }, []);
 
-  // ----------------------------------------------------------
-  // DATE PICKER
-  // ----------------------------------------------------------
-
   const openDatePicker = useCallback(() => {
     const currentDate = stringToDate(sendDate);
     const minimumDate = new Date();
     minimumDate.setHours(0, 0, 0, 0);
-
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: currentDate,
@@ -561,13 +538,8 @@ export default function CreateCourierScreen({ navigation }) {
     }
   }, [sendDate, safeSet]);
 
-  // ----------------------------------------------------------
-  // TIME PICKER
-  // ----------------------------------------------------------
-
   const openTimePicker = useCallback(() => {
     const currentTime = stringToTime(sendingTime);
-
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: currentTime,
@@ -585,21 +557,13 @@ export default function CreateCourierScreen({ navigation }) {
     }
   }, [sendingTime, safeSet]);
 
-  // ----------------------------------------------------------
-  // PRINTER DISCOVERY
-  // ----------------------------------------------------------
-
   const handleDiscoverPrinters = useCallback(async () => {
     if (discovering || !mountedRef.current) return;
-
     safeSet(setDiscovering, true);
-
     try {
       const devices = await discoverPrinters();
       if (!mountedRef.current) return;
-
       safeSet(setPrinters, devices);
-
       if (devices.length === 0) {
         Alert.alert(
           'No Printers Found',
@@ -610,11 +574,8 @@ export default function CreateCourierScreen({ navigation }) {
         );
         return;
       }
-
-      // Auto-select first printer-looking device
       const firstPrinter = devices[0];
       safeSet(setSelectedPrinter, firstPrinter);
-
       Alert.alert(
         'Printer Discovery',
         `${devices.length} paired Bluetooth device(s) found.\n\n` +
@@ -636,39 +597,26 @@ export default function CreateCourierScreen({ navigation }) {
     }
   }, [discovering, safeSet]);
 
-  // ----------------------------------------------------------
-  // LOAD FORM DATA
-  // ----------------------------------------------------------
-
   const loadFormData = useCallback(async () => {
     safeSet(setLoading, true);
-
     try {
       const raw = await authFetch(API_FORM);
       let data = raw;
-
       if (data && typeof data.json === 'function') {
         if (data.ok === false) {
           throw new Error(`Failed to load form data. HTTP ${data.status}`);
         }
         data = await data.json();
       }
-
       if (data?.data && !data.types) data = data.data;
-
       if (!data || !Array.isArray(data.types)) {
         throw new Error('Invalid server response: courier types are missing.');
       }
-
       data.partners = Array.isArray(data.partners) ? data.partners : [];
-
       if (!mountedRef.current) return;
-
       setFormData(data);
-
       if (data.types.length > 0) setTypeId(data.types[0].id);
       if (data.partners.length > 0) setPartnerId(data.partners[0].id);
-
       setSendingTime('');
     } catch (error) {
       if (!mountedRef.current) return;
@@ -687,33 +635,21 @@ export default function CreateCourierScreen({ navigation }) {
     loadFormData();
   }, [loadFormData]);
 
-  // ----------------------------------------------------------
-  // PRICE CALCULATION
-  // ----------------------------------------------------------
-
   useEffect(() => {
     if (!formData || !typeId) {
       setPrice('0');
       setAmount('0');
       return;
     }
-
     const selectedType = formData.types.find(
       (item) => normalizeId(item.id) === normalizeId(typeId)
     );
-
     if (!selectedType) return;
-
     const unitPrice = Number(selectedType.base_price) || 0;
     const qty = Math.max(1, parseInt(quantity, 10) || 1);
-
     setPrice(String(unitPrice));
     setAmount(String(unitPrice * qty));
   }, [typeId, quantity, formData]);
-
-  // ----------------------------------------------------------
-  // RESET FORM
-  // ----------------------------------------------------------
 
   const resetForm = useCallback(() => {
     setSenderName('');
@@ -725,58 +661,42 @@ export default function CreateCourierScreen({ navigation }) {
     setQuantity('1');
     setSendDate(getLocalDate());
     setSendingTime('');
-
     if (formData?.types?.length) setTypeId(formData.types[0].id);
     if (formData?.partners?.length) setPartnerId(formData.partners[0].id);
   }, [formData]);
-
-  // ----------------------------------------------------------
-  // VALIDATE FORM
-  // ----------------------------------------------------------
 
   const validateForm = useCallback(() => {
     const fail = (title, msg) => {
       Alert.alert(title, msg, [{ text: 'OK' }], { cancelable: false });
       return false;
     };
-
     if (!senderName.trim()) return fail('Missing Information', 'Enter sender full name.');
     if (!senderPhone.trim()) return fail('Missing Information', 'Enter sender phone number.');
     if (!recipientName.trim()) return fail('Missing Information', 'Enter recipient full name.');
     if (!recipientPhone.trim()) return fail('Missing Information', 'Enter recipient phone number.');
     if (!receivingAt.trim()) return fail('Missing Destination', 'Enter destination address.');
     if (!typeId) return fail('Missing Information', 'Select courier type.');
-
     if (!quantity.trim() || !/^\d+$/.test(quantity) || parseInt(quantity, 10) < 1) {
       return fail('Invalid Quantity', 'Quantity must be a positive whole number.');
     }
-
     const normalizedSendDate = normalizeCalendarDate(sendDate);
     if (!normalizedSendDate) return fail('Invalid Date', 'Please select a valid calendar date.');
     if (normalizedSendDate < getLocalDate()) return fail('Invalid Date', 'Send date cannot be in the past.');
-
     if (!sendingTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(sendingTime)) {
-      return fail(
-        'Missing Sending Time',
-        'Please tap the clock field and select the sending time.'
-      );
+      return fail('Missing Sending Time', 'Please tap the clock field and select the sending time.');
     }
-
     if (!formData?.default_location?.id) {
       return fail('Missing Location', 'Default sending location is not configured.');
     }
-
     if (!formData.types.some((i) => normalizeId(i.id) === normalizeId(typeId))) {
       return fail('Invalid Courier Type', 'Select a valid courier type.');
     }
-
     if (
       formData.partners.length > 0 &&
       !formData.partners.some((i) => normalizeId(i.id) === normalizeId(partnerId))
     ) {
       return fail('Invalid Partner', 'Select a valid carrier partner.');
     }
-
     return true;
   }, [
     senderName, senderPhone, recipientName, recipientPhone,
@@ -784,52 +704,36 @@ export default function CreateCourierScreen({ navigation }) {
     partnerId, formData,
   ]);
 
-  // ----------------------------------------------------------
-  // BUILD RECEIPT
-  // ----------------------------------------------------------
-
   const buildReceipt = useCallback(
     (courier) => {
       const code = courier.courier_id || courier.tracking || courier.id;
       const courierId = courier.id || courier.courier_id;
-
       const selectedType = formData.types.find(
         (i) => normalizeId(i.id) === normalizeId(typeId)
       );
-
       return {
         id: courierId,
         courierCode: String(code),
         tracking: String(courier.tracking || code),
-
         fromLocation:
           courier.location_name ||
           courier.slocation ||
           formData.default_location?.location_name ||
           formData.default_location?.name ||
           '-',
-
         senderName: courier.sender_name || senderName,
         senderPhone: courier.sender_phone || senderPhone,
-
         recipientName: courier.recipient_name || recipientName,
         recipientPhone: courier.recipient_phone || recipientPhone,
-
         destination: courier.receiving_at || courier.rlocation || receivingAt || '-',
-
         typeName: courier.type_name || selectedType?.type_name || '-',
-
         price: formatMoney(courier.price ?? price),
         quantity: courier.quantity || quantity,
         amount: formatMoney(courier.amount ?? amount),
-
         sendDate: courier.send_date || sendDate,
         sentTime: courier.sent_time || sendingTime || '-',
-
         note: courier.note || note || '-',
-
         fullname: courier.created_by_name || courier.fullname || '',
-
         createdAt: courier.created_at || new Date().toLocaleString(),
       };
     },
@@ -840,17 +744,11 @@ export default function CreateCourierScreen({ navigation }) {
     ]
   );
 
-  // ----------------------------------------------------------
-  // SUBMIT
-  // ----------------------------------------------------------
-
   const handleSubmit = useCallback(async () => {
     if (submitLock.current || submitting) return;
     if (!validateForm()) return;
-
     submitLock.current = true;
     setSubmitting(true);
-
     try {
       const response = await authFetch(API_CREATE, {
         method: 'POST',
@@ -872,19 +770,15 @@ export default function CreateCourierScreen({ navigation }) {
           note: note.trim(),
         }),
       });
-
       const { courier } = await normalizeCourierResponse(response);
       const code = courier.courier_id || courier.tracking || courier.id;
-
       const receipt = buildReceipt(courier);
 
       if (selectedPrinter) {
         setPrinting(true);
         const printResult = await printReceipt(receipt, selectedPrinter);
         setPrinting(false);
-
         resetForm();
-
         if (printResult.success) {
           Alert.alert(
             'Courier Created Successfully',
@@ -934,20 +828,12 @@ export default function CreateCourierScreen({ navigation }) {
     selectedPrinter, buildReceipt, resetForm, navigation,
   ]);
 
-  // ----------------------------------------------------------
-  // MEMOIZED PRINTER OPTIONS
-  // ----------------------------------------------------------
-
   const printerOptions = useMemo(() => {
     return printers.map((p) => ({
       ...p,
       active: selectedPrinter?.id === p.id,
     }));
   }, [printers, selectedPrinter]);
-
-  // ----------------------------------------------------------
-  // LOADING
-  // ----------------------------------------------------------
 
   if (loading) {
     return (
@@ -957,10 +843,6 @@ export default function CreateCourierScreen({ navigation }) {
       </View>
     );
   }
-
-  // ----------------------------------------------------------
-  // ERROR
-  // ----------------------------------------------------------
 
   if (!formData) {
     return (
@@ -975,10 +857,6 @@ export default function CreateCourierScreen({ navigation }) {
       </View>
     );
   }
-
-  // ----------------------------------------------------------
-  // MAIN
-  // ----------------------------------------------------------
 
   return (
     <KeyboardAvoidingView
