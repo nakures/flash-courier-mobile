@@ -857,12 +857,12 @@ export default function CreateCourierScreen({ navigation }) {
           <Pressable onPress={() => navigation.goBack()}>
             <Text style={styles.backBtn}>← Back</Text>
           </Pressable>
-          <Image
-            source={require('../assets/icon.png')}
-            style={styles.headerLogo}
-            resizeMode="contain"
-            accessibilityLabel="Flash Courier logo"
-          />
+        <Image
+  source={require('../../assets/icon.png')}
+  style={styles.headerLogo}
+  resizeMode="contain"
+  accessibilityLabel="Flash Courier logo"
+/>
           <Text style={styles.title}>New Courier</Text>
           <Text style={styles.posBadge}>Q2i POS</Text>
         </View>
