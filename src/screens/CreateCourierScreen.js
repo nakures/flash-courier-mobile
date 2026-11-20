@@ -9,6 +9,7 @@ import React, {
 import {
   View,
   Text,
+  Image,
   TextInput,
   ScrollView,
   Pressable,
@@ -28,8 +29,7 @@ import RNBluetoothClassic from 'react-native-bluetooth-classic';
 
 import { authFetch } from '../services/api';
 
-// Logo (Base64 generated from assets/icon-print.png, 240px wide)
-import { LOGO_BASE64 } from '../assets/logoBase64';
+import { Buffer } from 'buffer';
 
 // ============================================================
 // CONFIGURATION
@@ -264,29 +264,6 @@ const discoverPrinters = async () => {
 };
 
 // ============================================================
-// BYTE → BASE64 (Hermes-safe, no TextEncoder needed)
-// ============================================================
-
-const B64_CHARS =
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-const bytesToBase64 = (bytes) => {
-  let out = '';
-  const len = bytes.length;
-  for (let i = 0; i < len; i += 3) {
-    const b0 = bytes[i];
-    const b1 = i + 1 < len ? bytes[i + 1] : 0;
-    const b2 = i + 2 < len ? bytes[i + 2] : 0;
-
-    out += B64_CHARS[b0 >> 2];
-    out += B64_CHARS[((b0 & 0x03) << 4) | (b1 >> 4)];
-    out += i + 1 < len ? B64_CHARS[((b1 & 0x0F) << 2) | (b2 >> 6)] : '=';
-    out += i + 2 < len ? B64_CHARS[b2 & 0x3F] : '=';
-  }
-  return out;
-};
-
-// ============================================================
 // PRINT RECEIPT (QR + BARCODE guaranteed)
 // ============================================================
 
@@ -310,6 +287,8 @@ const printReceipt = async (receipt, printer) => {
       await withTimeout(
         RNBluetoothClassic.connectToDevice(address, {
           CONNECTOR_TYPE: 'rfcomm',
+          CONNECTION_TYPE: 'binary',
+          SECURE_SOCKET: false,
         }),
         PRINTER_TIMEOUT,
         'Printer connect'
@@ -322,8 +301,14 @@ const printReceipt = async (receipt, printer) => {
     // We convert our byte arrays to base64 before sending.
     const write = async (bytesOrArray) => {
       const bytes = Array.isArray(bytesOrArray) ? bytesOrArray : [bytesOrArray];
-      const b64 = bytesToBase64(bytes);
-      await RNBluetoothClassic.writeToDevice(address, b64, 'base64');
+      // Buffer is accepted by react-native-bluetooth-classic and is
+      // transported as Base64 internally by the native bridge.
+      const payload = Buffer.from(bytes);
+      const written = await RNBluetoothClassic.writeToDevice(address, payload);
+      if (written !== true) {
+        throw new Error('Bluetooth printer did not accept the data.');
+      }
+      return true;
     };
 
     // ---------- 1. Logo (optional) ----------
@@ -872,6 +857,12 @@ export default function CreateCourierScreen({ navigation }) {
           <Pressable onPress={() => navigation.goBack()}>
             <Text style={styles.backBtn}>← Back</Text>
           </Pressable>
+          <Image
+            source={require('../assets/icon.png')}
+            style={styles.headerLogo}
+            resizeMode="contain"
+            accessibilityLabel="Flash Courier logo"
+          />
           <Text style={styles.title}>New Courier</Text>
           <Text style={styles.posBadge}>Q2i POS</Text>
         </View>
@@ -1151,6 +1142,7 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 12, color: '#666', fontSize: 14 },
   errorText: { color: '#c0392b', fontSize: 16, textAlign: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  headerLogo: { width: 42, height: 42, marginRight: 9 },
   backBtn: { color: '#008c8c', fontSize: 15, fontWeight: '600', marginRight: 16 },
   title: { fontSize: 22, fontWeight: 'bold', color: '#222', flex: 1 },
   posBadge: {
