@@ -385,7 +385,7 @@ const printReceipt = async (receipt, printer) => {
     // ---------- 6. BARCODE ----------
     await write(concatBytes(ALIGN_CTR, asciiBytes('COURIER CODE\n')));
     await withTimeout(
-      write(code128Bytes(receipt.courierCode)),
+      write(code128Bytes(receipt.tracking)),
       PRINTER_TIMEOUT,
       'Print barcode'
     );
