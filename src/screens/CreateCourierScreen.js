@@ -27,7 +27,6 @@ import DateTimePicker, {
 
 import RNBluetoothClassic from 'react-native-bluetooth-classic';
 
-import ThermalPrinter, { image } from 'react-native-thermal-printer-driver';
 
 import { authFetch } from '../services/api';
 
@@ -229,46 +228,11 @@ const code128Bytes = (data) => {
   );
 };
 
-// ---------- RECEIPT LOGO (PNG -> ESC/POS MONOCHROME RASTER) ----------
-// Uses the installed thermal-printer-driver image renderer. The printer's
-// existing Bluetooth Classic socket is briefly released for image rendering,
-// then restored so the existing raw ESC/POS receipt/QR/barcode flow remains.
-const printLogoRaster = async (printer) => {
-  const source = Image.resolveAssetSource(require('../../assets/logo.png'));
-  if (!source?.uri) throw new Error('Receipt logo asset could not be resolved.');
-
-  const driverAddress = `bt:${printer.address}`;
-  let wasClassicConnected = false;
-  try {
-    wasClassicConnected = await RNBluetoothClassic.isDeviceConnected(printer.address);
-    if (wasClassicConnected) {
-      await RNBluetoothClassic.disconnectFromDevice(printer.address);
-    }
-
-    await ThermalPrinter.connect(driverAddress, { timeout: 12000 });
-    await ThermalPrinter.print(
-      driverAddress,
-      [image({ uri: source.uri, width: 384 })],
-      {
-        paperWidthMm: 58,
-        timeout: LOGO_TIMEOUT,
-        keepAlive: false,
-        disableCutPaper: true,
-      }
-    );
-  } finally {
-    try {
-      await ThermalPrinter.disconnect(driverAddress);
-    } catch (_) {}
-
-    if (wasClassicConnected) {
-      await RNBluetoothClassic.connectToDevice(printer.address, {
-        CONNECTOR_TYPE: 'rfcomm',
-        CONNECTION_TYPE: 'binary',
-        SECURE_SOCKET: false,
-      });
-    }
-  }
+// ---------- LOGO RASTER (disabled — PNG not usable here) ----------
+const printLogoRaster = async (_printer, _write) => {
+  // Placeholder — your LOGO_BASE64 is PNG, not ESC/POS raster.
+  // Skipping avoids printing garbage. Big courier code header acts as visual ID.
+  return;
 };
 
 // ============================================================
@@ -350,7 +314,7 @@ const printReceipt = async (receipt, printer) => {
 
     // ---------- 1. Logo (optional) ----------
     try {
-      await withTimeout(printLogoRaster(printer), LOGO_TIMEOUT, 'Print logo');
+      await withTimeout(printLogoRaster(printer, write), LOGO_TIMEOUT, 'Print logo');
     } catch (_) {
       /* logo is optional */
     }
