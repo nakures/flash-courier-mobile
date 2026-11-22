@@ -26,6 +26,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 
 import RNBluetoothClassic from 'react-native-bluetooth-classic';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
 import { authFetch } from '../services/api';
@@ -44,6 +45,7 @@ const DISCOVERY_TIMEOUT = 8000;
 const LOGO_TIMEOUT = 30000;
 
 const PRINTER_NAME_HINT = 'VBTPRINTER';
+const SAVED_PRINTER_KEY = '@flash_courier/saved_bluetooth_printer';
 const CHARS_PER_LINE = 32;
 
 // ============================================================
@@ -560,12 +562,33 @@ export default function CreateCourierScreen({ navigation }) {
         );
         return;
       }
-      const firstPrinter = devices[0];
+      // Restore the printer chosen in a previous session when it is still paired.
+      let savedPrinter = null;
+      try {
+        const savedValue = await AsyncStorage.getItem(SAVED_PRINTER_KEY);
+        savedPrinter = savedValue ? JSON.parse(savedValue) : null;
+      } catch (_) {
+        savedPrinter = null;
+      }
+      const matchedPrinter = savedPrinter?.address
+        ? devices.find((device) => device.address === savedPrinter.address)
+        : null;
+      const firstPrinter = matchedPrinter || devices[0];
       safeSet(setSelectedPrinter, firstPrinter);
+      // Keep the selected paired device for the next app session.
+      await AsyncStorage.setItem(
+        SAVED_PRINTER_KEY,
+        JSON.stringify({
+          id: firstPrinter.id,
+          address: firstPrinter.address,
+          name: firstPrinter.name,
+          deviceName: firstPrinter.deviceName,
+        })
+      );
       Alert.alert(
         'Printer Discovery',
         `${devices.length} paired Bluetooth device(s) found.\n\n` +
-          `Auto-selected: ${firstPrinter.name}\n` +
+          `${matchedPrinter ? 'Restored saved printer' : 'Selected printer'}: ${firstPrinter.name}\n` +
           `${firstPrinter.address}`,
         [{ text: 'OK' }],
         { cancelable: false }
@@ -895,7 +918,26 @@ export default function CreateCourierScreen({ navigation }) {
                       styles.printerOption,
                       printer.active && styles.printerOptionActive,
                     ]}
-                    onPress={() => setSelectedPrinter(printer)}
+                    onPress={async () => {
+                      setSelectedPrinter(printer);
+                      try {
+                        await AsyncStorage.setItem(
+                          SAVED_PRINTER_KEY,
+                          JSON.stringify({
+                            id: printer.id,
+                            address: printer.address,
+                            name: printer.name,
+                            deviceName: printer.deviceName,
+                          })
+                        );
+                      } catch (error) {
+                        Alert.alert(
+                          'Printer Preference',
+                          'Printer selected for this session, but it could not be saved for next time.\n\n' +
+                            (error?.message || 'Storage error.')
+                        );
+                      }
+                    }}
                   >
                     <View style={{ flex: 1 }}>
                       <Text
