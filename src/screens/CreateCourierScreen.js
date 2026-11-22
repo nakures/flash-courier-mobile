@@ -505,6 +505,26 @@ export default function CreateCourierScreen({ navigation }) {
     if (mountedRef.current) setter(value);
   }, []);
 
+  // Restore the saved printer immediately when the screen opens. Discovery can
+  // later confirm that it is still paired and refresh its device details.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(SAVED_PRINTER_KEY)
+      .then((savedValue) => {
+        if (!savedValue || cancelled) return;
+        const savedPrinter = JSON.parse(savedValue);
+        if (savedPrinter?.address && !cancelled) {
+          setSelectedPrinter(savedPrinter);
+        }
+      })
+      .catch(() => {
+        // Storage may be empty or unavailable; the user can still select a printer.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const openDatePicker = useCallback(() => {
     const currentDate = stringToDate(sendDate);
     const minimumDate = new Date();
