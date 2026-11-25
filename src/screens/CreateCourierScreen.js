@@ -26,7 +26,6 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 
 import RNBluetoothClassic from 'react-native-bluetooth-classic';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
 import { authFetch } from '../services/api';
@@ -45,7 +44,6 @@ const DISCOVERY_TIMEOUT = 8000;
 const LOGO_TIMEOUT = 30000;
 
 const PRINTER_NAME_HINT = 'VBTPRINTER';
-const SAVED_PRINTER_KEY = '@flash_courier/saved_bluetooth_printer';
 const CHARS_PER_LINE = 32;
 
 // ============================================================
@@ -505,26 +503,6 @@ export default function CreateCourierScreen({ navigation }) {
     if (mountedRef.current) setter(value);
   }, []);
 
-  // Restore the saved printer immediately when the screen opens. Discovery can
-  // later confirm that it is still paired and refresh its device details.
-  useEffect(() => {
-    let cancelled = false;
-    AsyncStorage.getItem(SAVED_PRINTER_KEY)
-      .then((savedValue) => {
-        if (!savedValue || cancelled) return;
-        const savedPrinter = JSON.parse(savedValue);
-        if (savedPrinter?.address && !cancelled) {
-          setSelectedPrinter(savedPrinter);
-        }
-      })
-      .catch(() => {
-        // Storage may be empty or unavailable; the user can still select a printer.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const openDatePicker = useCallback(() => {
     const currentDate = stringToDate(sendDate);
     const minimumDate = new Date();
@@ -582,33 +560,12 @@ export default function CreateCourierScreen({ navigation }) {
         );
         return;
       }
-      // Restore the printer chosen in a previous session when it is still paired.
-      let savedPrinter = null;
-      try {
-        const savedValue = await AsyncStorage.getItem(SAVED_PRINTER_KEY);
-        savedPrinter = savedValue ? JSON.parse(savedValue) : null;
-      } catch (_) {
-        savedPrinter = null;
-      }
-      const matchedPrinter = savedPrinter?.address
-        ? devices.find((device) => device.address === savedPrinter.address)
-        : null;
-      const firstPrinter = matchedPrinter || devices[0];
+      const firstPrinter = devices[0];
       safeSet(setSelectedPrinter, firstPrinter);
-      // Keep the selected paired device for the next app session.
-      await AsyncStorage.setItem(
-        SAVED_PRINTER_KEY,
-        JSON.stringify({
-          id: firstPrinter.id,
-          address: firstPrinter.address,
-          name: firstPrinter.name,
-          deviceName: firstPrinter.deviceName,
-        })
-      );
       Alert.alert(
         'Printer Discovery',
         `${devices.length} paired Bluetooth device(s) found.\n\n` +
-          `${matchedPrinter ? 'Restored saved printer' : 'Selected printer'}: ${firstPrinter.name}\n` +
+          `Auto-selected: ${firstPrinter.name}\n` +
           `${firstPrinter.address}`,
         [{ text: 'OK' }],
         { cancelable: false }
@@ -938,26 +895,7 @@ export default function CreateCourierScreen({ navigation }) {
                       styles.printerOption,
                       printer.active && styles.printerOptionActive,
                     ]}
-                    onPress={async () => {
-                      setSelectedPrinter(printer);
-                      try {
-                        await AsyncStorage.setItem(
-                          SAVED_PRINTER_KEY,
-                          JSON.stringify({
-                            id: printer.id,
-                            address: printer.address,
-                            name: printer.name,
-                            deviceName: printer.deviceName,
-                          })
-                        );
-                      } catch (error) {
-                        Alert.alert(
-                          'Printer Preference',
-                          'Printer selected for this session, but it could not be saved for next time.\n\n' +
-                            (error?.message || 'Storage error.')
-                        );
-                      }
-                    }}
+                    onPress={() => setSelectedPrinter(printer)}
                   >
                     <View style={{ flex: 1 }}>
                       <Text
