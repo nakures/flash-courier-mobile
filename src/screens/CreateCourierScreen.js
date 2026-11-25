@@ -374,9 +374,11 @@ const printReceipt = async (receipt, printer) => {
     body = body.concat(separatorBytes());
     await write(body);
 
-    // ---------- 5. QR CODE ----------
-    const trackUrl = `https://flashcourier.co.rw/reactflash/scan_invoice.php?invoice=${receipt.id}`;
-    await write(concatBytes(ALIGN_CTR, asciiBytes('SCAN TO TRACK\n')));
+    // ---------- 5. QR CODE + BARCODE: SAME INVOICE NUMBER ----------
+    // The invoice number encoded in the barcode is also sent in the QR link.
+    const invoiceNumber = String(receipt.tracking || receipt.courierCode || receipt.id);
+    const trackUrl = `https://flashcourier.co.rw/reactflash/scan_invoice.php?invoice=${encodeURIComponent(invoiceNumber)}`;
+    await write(concatBytes(ALIGN_CTR, asciiBytes('SCAN TO TRACK INVOICE\n')));
     await withTimeout(
       write(qrBytes(trackUrl, 6)),
       PRINTER_TIMEOUT,
@@ -385,9 +387,9 @@ const printReceipt = async (receipt, printer) => {
     await write([LF_BYTE]);
 
     // ---------- 6. BARCODE ----------
-    await write(concatBytes(ALIGN_CTR, asciiBytes('COURIER CODE\n')));
+    await write(concatBytes(ALIGN_CTR, asciiBytes('INVOICE NUMBER\n')));
     await withTimeout(
-      write(code128Bytes(receipt.tracking)),
+      write(code128Bytes(invoiceNumber)),
       PRINTER_TIMEOUT,
       'Print barcode'
     );
