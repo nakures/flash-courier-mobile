@@ -26,6 +26,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 
 import RNBluetoothClassic from 'react-native-bluetooth-classic';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
 import { authFetch } from '../services/api';
@@ -44,6 +45,7 @@ const DISCOVERY_TIMEOUT = 8000;
 const LOGO_TIMEOUT = 30000;
 
 const PRINTER_NAME_HINT = 'VBTPRINTER';
+const SAVED_PRINTER_KEY = 'flash_courier_saved_printer_v1';
 const CHARS_PER_LINE = 32;
 
 // ============================================================
@@ -474,6 +476,21 @@ export default function CreateCourierScreen({ navigation }) {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(SAVED_PRINTER_KEY)
+      .then((saved) => {
+        if (!active || !saved) return;
+        const printer = JSON.parse(saved);
+        if (printer && (printer.address || printer.macAddress)) {
+          setSelectedPrinter(printer);
+          setPrinterSelectionVisible(false);
+        }
+      })
+      .catch((error) => console.warn('Unable to load saved printer:', error));
+    return () => { active = false; };
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
@@ -494,6 +511,7 @@ export default function CreateCourierScreen({ navigation }) {
   const [amount, setAmount] = useState('0');
   const [printers, setPrinters] = useState([]);
   const [selectedPrinter, setSelectedPrinter] = useState(null);
+  const [printerSelectionVisible, setPrinterSelectionVisible] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [showIOSDatePicker, setShowIOSDatePicker] = useState(false);
@@ -543,6 +561,25 @@ export default function CreateCourierScreen({ navigation }) {
     }
   }, [sendingTime, safeSet]);
 
+  const saveSelectedPrinter = useCallback(async (printer) => {
+    if (!printer) return;
+    const normalized = {
+      id: printer.id || printer.address || printer.macAddress,
+      name: printer.name || printer.deviceName || 'VBTPRINTER',
+      deviceName: printer.deviceName || printer.name || 'VBTPRINTER',
+      address: printer.address || printer.macAddress,
+      macAddress: printer.macAddress || printer.address,
+    };
+    safeSet(setSelectedPrinter, normalized);
+    safeSet(setPrinterSelectionVisible, false);
+    try {
+      await AsyncStorage.setItem(SAVED_PRINTER_KEY, JSON.stringify(normalized));
+    } catch (error) {
+      Alert.alert('Printer Save Failed', 'The printer is selected, but could not be saved for next time.');
+      console.warn('Unable to save printer:', error);
+    }
+  }, [safeSet]);
+
   const handleDiscoverPrinters = useCallback(async () => {
     if (discovering || !mountedRef.current) return;
     safeSet(setDiscovering, true);
@@ -561,7 +598,7 @@ export default function CreateCourierScreen({ navigation }) {
         return;
       }
       const firstPrinter = devices[0];
-      safeSet(setSelectedPrinter, firstPrinter);
+      await saveSelectedPrinter(firstPrinter);
       Alert.alert(
         'Printer Discovery',
         `${devices.length} paired Bluetooth device(s) found.\n\n` +
@@ -581,7 +618,7 @@ export default function CreateCourierScreen({ navigation }) {
     } finally {
       if (mountedRef.current) safeSet(setDiscovering, false);
     }
-  }, [discovering, safeSet]);
+  }, [discovering, safeSet, saveSelectedPrinter]);
 
   const loadFormData = useCallback(async () => {
     safeSet(setLoading, true);
@@ -870,73 +907,53 @@ export default function CreateCourierScreen({ navigation }) {
 
         {Platform.OS === 'android' && (
           <View style={styles.printerSection}>
-            <Text style={styles.section}>ESC/POS Thermal Printer</Text>
-            <Text style={styles.deviceText}>Device: Q2i Android POS</Text>
-
-            <Pressable
-              style={styles.discoverBtn}
-              onPress={handleDiscoverPrinters}
-              disabled={discovering}
-            >
-              {discovering ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.discoverText}>SEARCH FOR PRINTERS</Text>
-              )}
-            </Pressable>
-
-            {printerOptions.length > 0 && (
-              <View style={{ marginTop: 12 }}>
-                <Text style={styles.deviceText}>Available Bluetooth devices:</Text>
-                {printerOptions.map((printer) => (
-                  <Pressable
-                    key={printer.id || printer.address}
-                    style={[
-                      styles.printerOption,
-                      printer.active && styles.printerOptionActive,
-                    ]}
-                    onPress={() => setSelectedPrinter(printer)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.optionText,
-                          printer.active && styles.optionTextActive,
-                        ]}
+            {selectedPrinter && !printerSelectionVisible ? (
+              <View>
+                <Text style={styles.section}>ESC/POS Thermal Printer</Text>
+                <Text style={styles.deviceText}>Saved printer: {selectedPrinter.name || selectedPrinter.deviceName || 'VBTPRINTER'}</Text>
+                <Text style={styles.printerAddress}>{selectedPrinter.address || selectedPrinter.macAddress}</Text>
+                <Pressable
+                  style={styles.discoverBtn}
+                  onPress={() => setPrinterSelectionVisible(true)}
+                >
+                  <Text style={styles.discoverText}>CHANGE PRINTER</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.section}>ESC/POS Thermal Printer</Text>
+                <Text style={styles.deviceText}>Device: Q2i Android POS</Text>
+                <Pressable style={styles.discoverBtn} onPress={handleDiscoverPrinters} disabled={discovering}>
+                  {discovering ? <ActivityIndicator color="#fff" /> : <Text style={styles.discoverText}>SEARCH FOR PRINTERS</Text>}
+                </Pressable>
+                {printerOptions.length > 0 && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={styles.deviceText}>Available Bluetooth devices:</Text>
+                    {printerOptions.map((printer) => (
+                      <Pressable
+                        key={printer.id || printer.address}
+                        style={[styles.printerOption, printer.active && styles.printerOptionActive]}
+                        onPress={() => saveSelectedPrinter(printer)}
                       >
-                        {printer.name || printer.deviceName || 'Unknown printer'}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.printerAddress,
-                          printer.active && styles.optionTextActive,
-                        ]}
-                      >
-                        {printer.address || printer.macAddress}
-                      </Text>
-                    </View>
-                    <Text
-                      style={[
-                        styles.selectText,
-                        printer.active && styles.optionTextActive,
-                      ]}
-                    >
-                      {printer.active ? 'SELECTED' : 'SELECT'}
-                    </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.optionText, printer.active && styles.optionTextActive]}>{printer.name || printer.deviceName || 'Unknown printer'}</Text>
+                          <Text style={[styles.printerAddress, printer.active && styles.optionTextActive]}>{printer.address || printer.macAddress}</Text>
+                        </View>
+                        <Text style={[styles.selectText, printer.active && styles.optionTextActive]}>{printer.active ? 'SELECTED' : 'SELECT'}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                <Text style={styles.hint}>Pair the Q2i printer (VBTPRINTER) in Android Bluetooth settings before searching.</Text>
+                {selectedPrinter && (
+                  <Pressable onPress={() => setPrinterSelectionVisible(false)} style={{ marginTop: 8 }}>
+                    <Text style={styles.selectedPrinter}>Use saved printer: {selectedPrinter.name || selectedPrinter.deviceName || 'VBTPRINTER'} · Hide selection</Text>
                   </Pressable>
-                ))}
+                )}
               </View>
             )}
-
-            <Text style={styles.hint}>
-              Pair the Q2i printer (VBTPRINTER) in Android Bluetooth settings before searching.
-            </Text>
-            <Text style={styles.selectedPrinter}>
-              Selected: {selectedPrinter?.name || selectedPrinter?.deviceName || 'No printer selected'}
-            </Text>
           </View>
         )}
-
         <Text style={styles.section}>Sender Information</Text>
         <TextInput
           style={styles.input}
