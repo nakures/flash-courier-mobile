@@ -32,6 +32,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authFetch } from '../services/api';
 
 import { Buffer } from 'buffer';
+import UPNG from 'upng-js';
+import { LOGO_BASE64 } from '../assets/logoBase64';
 
 // ============================================================
 // CONFIGURATION
@@ -230,11 +232,70 @@ const code128Bytes = (data) => {
   );
 };
 
-// ---------- LOGO RASTER (disabled — PNG not usable here) ----------
-const printLogoRaster = async (_printer, _write) => {
-  // Placeholder — your LOGO_BASE64 is PNG, not ESC/POS raster.
-  // Skipping avoids printing garbage. Big courier code header acts as visual ID.
-  return;
+// ---------- LOGO RASTER: PNG to ESC/POS monochrome ----------
+const printLogoRaster = async (_printer, write) => {
+  const base64 = String(LOGO_BASE64 || '').replace(/^data:image\\/png;base64,/, '');
+  if (!base64) throw new Error('Receipt logo image is empty.');
+
+  // Decode the bundled PNG in JavaScript; no native image module is required.
+  const pngBuffer = Buffer.from(base64, 'base64');
+  const pngArrayBuffer = pngBuffer.buffer.slice(
+    pngBuffer.byteOffset,
+    pngBuffer.byteOffset + pngBuffer.byteLength
+  );
+  const decoded = UPNG.decode(pngArrayBuffer);
+  const rgbaBuffer = UPNG.toRGBA8(decoded)[0];
+  if (!decoded.width || !decoded.height || !rgbaBuffer) {
+    throw new Error('Receipt logo PNG could not be decoded.');
+  }
+
+  // Q2i thermal printers commonly provide 384 printable dots on 58 mm paper.
+  // Keep the original 240 px logo size and only reduce wider images if needed.
+  const scale = Math.min(1, 384 / decoded.width);
+  const width = Math.max(1, Math.floor(decoded.width * scale));
+  const height = Math.max(1, Math.floor(decoded.height * scale));
+  const rgba = new Uint8Array(rgbaBuffer);
+  const rowBytes = Math.ceil(width / 8);
+  const raster = new Uint8Array(rowBytes * height);
+
+  for (let y = 0; y < height; y++) {
+    const sourceY = Math.min(decoded.height - 1, Math.floor(y / scale));
+    for (let x = 0; x < width; x++) {
+      const sourceX = Math.min(decoded.width - 1, Math.floor(x / scale));
+      const sourceIndex = (sourceY * decoded.width + sourceX) * 4;
+      const alpha = rgba[sourceIndex + 3] / 255;
+
+      // Composite transparent pixels onto white paper before thresholding.
+      const red = rgba[sourceIndex];
+      const green = rgba[sourceIndex + 1];
+      const blue = rgba[sourceIndex + 2];
+      const luminance = (
+        (0.299 * red + 0.587 * green + 0.114 * blue) * alpha
+      ) + (255 * (1 - alpha));
+
+      if (luminance < 180) {
+        raster[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
+      }
+    }
+  }
+
+  // ESC/POS GS v 0 raster image command (mode 0, normal size).
+  const xL = rowBytes & 0xff;
+  const xH = (rowBytes >> 8) & 0xff;
+  const yL = height & 0xff;
+  const yH = (height >> 8) & 0xff;
+
+  await write(ALIGN_CTR);
+  await write([GS, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+
+  // Send in small sequential chunks for reliable Bluetooth SPP transfer.
+  const CHUNK_SIZE = 1024;
+  for (let offset = 0; offset < raster.length; offset += CHUNK_SIZE) {
+    await write(Array.from(raster.subarray(offset, offset + CHUNK_SIZE)));
+  }
+
+  await write([LF_BYTE]);
+  await write(ALIGN_LFT);
 };
 
 // ============================================================
