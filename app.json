@@ -45,10 +45,9 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundImage": "./assets/icon.png",
-        "monochromeImage": "./assets/icon.png"
-      }
+  "foregroundImage": "./assets/icon.png",
+  "backgroundColor": "#ffffff"
+}
     },
     "extra": {
       "eas": {
