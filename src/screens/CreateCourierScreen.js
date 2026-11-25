@@ -32,7 +32,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authFetch } from '../services/api';
 
 import { Buffer } from 'buffer';
-import UPNG from 'upng-js';
+import UPNG from '@upng/upng-js';
 import { LOGO_BASE64 } from '../assets/logoBase64';
 
 // ============================================================
