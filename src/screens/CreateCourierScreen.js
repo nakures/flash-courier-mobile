@@ -234,7 +234,7 @@ const code128Bytes = (data) => {
 
 // ---------- LOGO RASTER: PNG to ESC/POS monochrome ----------
 const printLogoRaster = async (_printer, write) => {
-  const base64 = String(LOGO_BASE64 || '').replace(/^data:image\\/png;base64,/, '');
+  const base64 = String(LOGO_BASE64 || '').replace(/^data:image\/png;base64,/, '');
   if (!base64) throw new Error('Receipt logo image is empty.');
 
   // Decode the bundled PNG in JavaScript; no native image module is required.
@@ -378,8 +378,9 @@ const printReceipt = async (receipt, printer) => {
     // ---------- 1. Logo (optional) ----------
     try {
       await withTimeout(printLogoRaster(printer, write), LOGO_TIMEOUT, 'Print logo');
-    } catch (_) {
-      /* logo is optional */
+    } catch (logoError) {
+      // Keep receipt printing alive if this printer rejects the optional logo.
+      console.warn('Receipt logo was skipped:', logoError?.message || logoError);
     }
 
     // ---------- 2. Initialize + header ----------
