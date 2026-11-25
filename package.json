@@ -29,7 +29,7 @@
     "react-native-screens": "~4.30.1",
     "react-native-thermal-printer-driver": "^0.1.1",
     "with-rn-bluetooth-classic": "^1.0.5",
-    "upng-js": "^2.2.0"
+    "@upng/upng-js": "^2.2.2"
   },
   "devDependencies": {
     "patch-package": "^8.0.1"
