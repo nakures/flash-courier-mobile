@@ -1,3 +1,4 @@
+
 import React, {
   useState,
   useEffect,
@@ -27,7 +28,6 @@ import DateTimePicker, {
 
 import RNBluetoothClassic from 'react-native-bluetooth-classic';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 
 import { authFetch } from '../services/api';
 
@@ -63,12 +63,24 @@ const getLocalDate = () => {
 
 const normalizeCalendarDate = (value) => {
   if (!value || typeof value !== 'string') return null;
+
   const trimmed = value.trim();
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+
   const [year, month, day] = trimmed.split('-').map(Number);
-  if (year < 1900 || year > 2999 || month < 1 || month > 12) return null;
+
+  if (
+    year < 1900 ||
+    year > 2999 ||
+    month < 1 ||
+    month > 12
+  ) return null;
+
   const daysInMonth = new Date(year, month, 0).getDate();
+
   if (day < 1 || day > daysInMonth) return null;
+
   return trimmed;
 };
 
@@ -80,31 +92,49 @@ const timeToString = (date) =>
 
 const stringToDate = (value) => {
   if (!value) return new Date();
+
   const [year, month, day] = value.split('-').map(Number);
+
   return new Date(year, month - 1, day, 12, 0, 0);
 };
 
 const stringToTime = (value) => {
   if (!value) return new Date();
+
   const match = String(value).match(/(\d{1,2}):(\d{2})/);
+
   if (!match) return new Date();
+
   const result = new Date();
-  result.setHours(Number(match[1]), Number(match[2]), 0, 0);
+
+  result.setHours(
+    Number(match[1]),
+    Number(match[2]),
+    0,
+    0
+  );
+
   return result;
 };
 
-const formatMoney = (value) => Number(value || 0).toLocaleString('en-US');
+const formatMoney = (value) =>
+  Number(value || 0).toLocaleString('en-US');
 
 const normalizeId = (value) => String(value ?? '');
 
 const formatTimeForDisplay = (value) => {
   if (!value) return 'Select sending time';
+
   const match = String(value).match(/(\d{1,2}):(\d{2})/);
+
   if (!match) return value;
+
   const hours = Number(match[1]);
   const minutes = match[2];
+
   const suffix = hours >= 12 ? 'PM' : 'AM';
   const displayHour = hours % 12 || 12;
+
   return `${displayHour}:${minutes} ${suffix}`;
 };
 
@@ -116,16 +146,21 @@ const requestBluetoothPermissions = async () => {
   if (Platform.OS !== 'android') {
     throw new Error('Bluetooth printing is only available on Android.');
   }
+
   const sdkInt = Number(Platform.Version) || 0;
+
   if (sdkInt >= 31) {
     const perms = [
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
     ].filter(Boolean);
+
     const results = await PermissionsAndroid.requestMultiple(perms);
+
     const allGranted = perms.every(
       (p) => results[p] === PermissionsAndroid.RESULTS.GRANTED
     );
+
     if (!allGranted) {
       throw new Error(
         'Bluetooth permission denied. Enable Nearby Devices access in Android settings.'
@@ -133,13 +168,18 @@ const requestBluetoothPermissions = async () => {
     }
   } else {
     const perm = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
+
     if (perm) {
       const result = await PermissionsAndroid.request(perm);
+
       if (result !== PermissionsAndroid.RESULTS.GRANTED) {
-        throw new Error('Location permission is required for Bluetooth access.');
+        throw new Error(
+          'Location permission is required for Bluetooth access.'
+        );
       }
     }
   }
+
   return true;
 };
 
@@ -151,7 +191,10 @@ const withTimeout = (promise, ms, label) =>
   Promise.race([
     promise,
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      setTimeout(
+        () => reject(new Error(`${label} timed out after ${ms}ms`)),
+        ms
+      )
     ),
   ]);
 
@@ -163,32 +206,37 @@ const LF_BYTE = 0x0A;
 const ESC = 0x1B;
 const GS = 0x1D;
 
-const INIT_BYTES = [ESC, 0x40]; // ESC @
-const ALIGN_LFT = [ESC, 0x61, 0x00]; // ESC a 0
-const ALIGN_CTR = [ESC, 0x61, 0x01]; // ESC a 1
-const BOLD_ON = [ESC, 0x45, 0x01]; // ESC E 1
-const BOLD_OFF = [ESC, 0x45, 0x00]; // ESC E 0
-const SIZE_DBL = [GS, 0x21, 0x11]; // GS ! 17
-const SIZE_NRM = [GS, 0x21, 0x00]; // GS ! 0
-const FEED = [ESC, 0x64, 0x03]; // ESC d 3
-const CUT = [GS, 0x56, 0x41, 0x03]; // GS V A 3
+const INIT_BYTES = [ESC, 0x40];
+const ALIGN_LFT = [ESC, 0x61, 0x00];
+const ALIGN_CTR = [ESC, 0x61, 0x01];
 
-// Convert ASCII string to byte array. Non-ASCII chars (>127) are replaced with '?'.
+const BOLD_ON = [ESC, 0x45, 0x01];
+const BOLD_OFF = [ESC, 0x45, 0x00];
+
+const SIZE_DBL = [GS, 0x21, 0x11];
+const SIZE_NRM = [GS, 0x21, 0x00];
+
+const FEED = [ESC, 0x64, 0x03];
+const CUT = [GS, 0x56, 0x41, 0x03];
+
 const asciiBytes = (str) => {
   const out = [];
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    out.push(code <= 0x7F ? code : 0x3F); // '?' for non-ASCII
+
+  for (let i = 0; i < String(str).length; i++) {
+    const code = String(str).charCodeAt(i);
+    out.push(code <= 0x7F ? code : 0x3F);
   }
+
   return out;
 };
 
-// Concatenate multiple byte arrays
 const concatBytes = (...arrays) => {
   const out = [];
+
   for (const arr of arrays) {
     for (const b of arr) out.push(b);
   }
+
   return out;
 };
 
@@ -196,102 +244,166 @@ const separatorBytes = () =>
   asciiBytes('-'.repeat(CHARS_PER_LINE) + '\n');
 
 const padRowBytes = (label, value) => {
-  const l = String(label);
-  const r = String(value);
-  const dots = Math.max(1, CHARS_PER_LINE - l.length - r.length);
+  const l = String(label ?? '');
+  const r = String(value ?? '');
+
+  const dots = Math.max(
+    1,
+    CHARS_PER_LINE - l.length - r.length
+  );
+
   return asciiBytes(l + '.'.repeat(dots) + r + '\n');
 };
 
-// ---------- QR CODE: native GS ( k, Model 2 ----------
+// ============================================================
+// QR CODE - ESC/POS MODEL 2
+// ============================================================
+
 const qrBytes = (data, moduleSize = 6, ecByte = 0x31) => {
   const payload = asciiBytes(String(data));
+
   const len = payload.length + 3;
+
   const pL = len & 0xff;
   const pH = (len >> 8) & 0xff;
 
   return concatBytes(
-    [GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00], // model 2
-    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, moduleSize], // module size
-    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, ecByte], // EC level M
-    [GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30], // store data header
+    [GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00],
+    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, moduleSize],
+    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, ecByte],
+    [GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30],
     payload,
-    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30] // print
+    [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]
   );
 };
 
-// ---------- BARCODE: native GS k m=73 (CODE128 fn B) ----------
+// ============================================================
+// CODE128 BARCODE
+// ============================================================
+
 const code128Bytes = (data) => {
   const text = asciiBytes(String(data));
+
   return concatBytes(
-    [GS, 0x68, 0x50], // GS h 80 (height)
-    [GS, 0x77, 0x02], // GS w 2 (width)
-    [GS, 0x48, 0x02], // GS H 2 (HRI below)
-    [GS, 0x66, 0x00], // GS f 0 (font A)
-    [GS, 0x6B, 0x49, text.length], // GS k 73 len
+    [GS, 0x68, 0x50],
+    [GS, 0x77, 0x02],
+    [GS, 0x48, 0x02],
+    [GS, 0x66, 0x00],
+    [GS, 0x6B, 0x49, text.length],
     text
   );
 };
 
-// ---------- LOGO RASTER: PNG to ESC/POS monochrome ----------
-const printLogoRaster = async (_printer, write) => {
-  const base64 = String(LOGO_BASE64 || '').replace(/^data:image\/png;base64,/, '');
-  if (!base64) throw new Error('Receipt logo image is empty.');
+// ============================================================
+// LOGO RASTER - PNG TO ESC/POS MONOCHROME
+// ============================================================
 
-  // Decode the bundled PNG in JavaScript; no native image module is required.
+const printLogoRaster = async (write) => {
+  const base64 = String(LOGO_BASE64 || '')
+    .replace(/^data:image\/png;base64,/, '')
+    .replace(/\s/g, '');
+
+  if (!base64) {
+    throw new Error('Receipt logo image is empty.');
+  }
+
   const pngBuffer = Buffer.from(base64, 'base64');
+
   const pngArrayBuffer = pngBuffer.buffer.slice(
     pngBuffer.byteOffset,
     pngBuffer.byteOffset + pngBuffer.byteLength
   );
+
   const decoded = UPNG.decode(pngArrayBuffer);
+
   const rgbaBuffer = UPNG.toRGBA8(decoded)[0];
+
   if (!decoded.width || !decoded.height || !rgbaBuffer) {
     throw new Error('Receipt logo PNG could not be decoded.');
   }
 
-  // Q2i thermal printers commonly provide 384 printable dots on 58 mm paper.
-  // Keep the original 240 px logo size and only reduce wider images if needed.
+  // Q2i / 58mm thermal printer width.
   const scale = Math.min(1, 384 / decoded.width);
+
   const width = Math.max(1, Math.floor(decoded.width * scale));
   const height = Math.max(1, Math.floor(decoded.height * scale));
+
   const rgba = new Uint8Array(rgbaBuffer);
+
   const rowBytes = Math.ceil(width / 8);
+
   const raster = new Uint8Array(rowBytes * height);
 
   for (let y = 0; y < height; y++) {
-    const sourceY = Math.min(decoded.height - 1, Math.floor(y / scale));
+    const sourceY = Math.min(
+      decoded.height - 1,
+      Math.floor(y / scale)
+    );
+
     for (let x = 0; x < width; x++) {
-      const sourceX = Math.min(decoded.width - 1, Math.floor(x / scale));
-      const sourceIndex = (sourceY * decoded.width + sourceX) * 4;
+      const sourceX = Math.min(
+        decoded.width - 1,
+        Math.floor(x / scale)
+      );
+
+      const sourceIndex =
+        (sourceY * decoded.width + sourceX) * 4;
+
       const alpha = rgba[sourceIndex + 3] / 255;
 
-      // Composite transparent pixels onto white paper before thresholding.
       const red = rgba[sourceIndex];
       const green = rgba[sourceIndex + 1];
       const blue = rgba[sourceIndex + 2];
-      const luminance = (
-        (0.299 * red + 0.587 * green + 0.114 * blue) * alpha
-      ) + (255 * (1 - alpha));
+
+      const luminance =
+        (
+          0.299 * red +
+          0.587 * green +
+          0.114 * blue
+        ) * alpha +
+        255 * (1 - alpha);
 
       if (luminance < 180) {
-        raster[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
+        raster[y * rowBytes + (x >> 3)] |=
+          0x80 >> (x & 7);
       }
     }
   }
 
-  // ESC/POS GS v 0 raster image command (mode 0, normal size).
   const xL = rowBytes & 0xff;
   const xH = (rowBytes >> 8) & 0xff;
+
   const yL = height & 0xff;
   const yH = (height >> 8) & 0xff;
 
+  // Center logo.
   await write(ALIGN_CTR);
-  await write([GS, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
 
-  // Send in small sequential chunks for reliable Bluetooth SPP transfer.
+  // GS v 0 - raster image.
+  await write([
+    GS,
+    0x76,
+    0x30,
+    0x00,
+    xL,
+    xH,
+    yL,
+    yH,
+  ]);
+
+  // Sequential Bluetooth transfer.
   const CHUNK_SIZE = 1024;
-  for (let offset = 0; offset < raster.length; offset += CHUNK_SIZE) {
-    await write(Array.from(raster.subarray(offset, offset + CHUNK_SIZE)));
+
+  for (
+    let offset = 0;
+    offset < raster.length;
+    offset += CHUNK_SIZE
+  ) {
+    const chunk = Array.from(
+      raster.subarray(offset, offset + CHUNK_SIZE)
+    );
+
+    await write(chunk);
   }
 
   await write([LF_BYTE]);
@@ -304,36 +416,46 @@ const printLogoRaster = async (_printer, write) => {
 
 const discoverPrinters = async () => {
   await requestBluetoothPermissions();
+
   const bonded = await withTimeout(
     RNBluetoothClassic.getBondedDevices(),
     DISCOVERY_TIMEOUT,
     'Printer scan'
   );
+
   if (!Array.isArray(bonded)) return [];
 
   const sorted = [...bonded].sort((a, b) => {
     const an = (a.name || '').toUpperCase();
     const bn = (b.name || '').toUpperCase();
-    const aScore = an.includes(PRINTER_NAME_HINT) ? 0 : an.includes('PRINTER') ? 1 : 2;
-    const bScore = bn.includes(PRINTER_NAME_HINT) ? 0 : bn.includes('PRINTER') ? 1 : 2;
+
+    const aScore = an.includes(PRINTER_NAME_HINT)
+      ? 0
+      : an.includes('PRINTER') ? 1 : 2;
+
+    const bScore = bn.includes(PRINTER_NAME_HINT)
+      ? 0
+      : bn.includes('PRINTER') ? 1 : 2;
+
     return aScore - bScore;
   });
 
-  return sorted.map((d) => ({
-    id: d.address,
-    address: d.address,
-    name: d.name || 'Unknown device',
-    deviceName: d.name || 'Unknown device',
+  return sorted.map((device) => ({
+    id: device.address,
+    address: device.address,
+    name: device.name || 'Unknown device',
+    deviceName: device.name || 'Unknown device',
   }));
 };
 
 // ============================================================
-// PRINT RECEIPT (QR + BARCODE guaranteed)
+// PRINT RECEIPT
 // ============================================================
 
 const printReceipt = async (receipt, printer) => {
   let address = null;
   let connected = false;
+  let printStage = 'Printer validation';
 
   try {
     if (!printer || !printer.address) {
@@ -344,9 +466,11 @@ const printReceipt = async (receipt, printer) => {
 
     await requestBluetoothPermissions();
 
-    // Connect over Classic Bluetooth SPP (RFCOMM).
-    // IMPORTANT: do NOT specify DEVICE_CHARSET here. We'll send base64.
-    const already = await RNBluetoothClassic.isDeviceConnected(address);
+    printStage = 'Bluetooth connection';
+
+    const already =
+      await RNBluetoothClassic.isDeviceConnected(address);
+
     if (!already) {
       await withTimeout(
         RNBluetoothClassic.connectToDevice(address, {
@@ -361,31 +485,48 @@ const printReceipt = async (receipt, printer) => {
 
     connected = true;
 
-    // Hermes natively supports base64 encoding.
-    // We convert our byte arrays to base64 before sending.
+    // Every write is sent as binary data.
     const write = async (bytesOrArray) => {
-      const bytes = Array.isArray(bytesOrArray) ? bytesOrArray : [bytesOrArray];
-      // Buffer is accepted by react-native-bluetooth-classic and is
-      // transported as Base64 internally by the native bridge.
+      const bytes = Array.isArray(bytesOrArray)
+        ? bytesOrArray
+        : [bytesOrArray];
+
       const payload = Buffer.from(bytes);
-      const written = await RNBluetoothClassic.writeToDevice(address, payload);
+
+      const written = await withTimeout(
+        RNBluetoothClassic.writeToDevice(address, payload),
+        PRINTER_TIMEOUT,
+        'Bluetooth write'
+      );
+
       if (written !== true) {
-        throw new Error('Bluetooth printer did not accept the data.');
+        throw new Error(
+          'Bluetooth printer did not accept the data.'
+        );
       }
+
       return true;
     };
 
-    // ---------- 1. Logo (optional) ----------
-    try {
-      await withTimeout(printLogoRaster(printer, write), LOGO_TIMEOUT, 'Print logo');
-    } catch (logoError) {
-      // Keep receipt printing alive if this printer rejects the optional logo.
-      console.warn('Receipt logo was skipped:', logoError?.message || logoError);
-    }
+    // 1. Initialize printer BEFORE sending the logo.
+    printStage = 'Printer initialization';
 
-    // ---------- 2. Initialize + header ----------
+    await write(INIT_BYTES);
+    await write(ALIGN_CTR);
+
+    // 2. Print receipt company logo.
+    printStage = 'Company logo';
+
+    await withTimeout(
+      printLogoRaster(write),
+      LOGO_TIMEOUT,
+      'Print logo'
+    );
+
+    // 3. Company heading.
+    printStage = 'Receipt heading';
+
     await write(concatBytes(
-      INIT_BYTES,
       ALIGN_CTR,
       BOLD_ON,
       SIZE_DBL,
@@ -395,7 +536,9 @@ const printReceipt = async (receipt, printer) => {
       separatorBytes()
     ));
 
-    // ---------- 3. Large courier code ----------
+    // 4. Courier code.
+    printStage = 'Courier code';
+
     await write(concatBytes(
       ALIGN_CTR,
       BOLD_ON,
@@ -405,78 +548,187 @@ const printReceipt = async (receipt, printer) => {
       BOLD_OFF
     ));
 
-    // ---------- 4. Body ----------
+    // 5. Receipt body.
+    printStage = 'Courier information';
+
     let body = [];
+
     body = body.concat(ALIGN_LFT);
-    body = body.concat(padRowBytes('TRACKING', receipt.tracking));
-    body = body.concat(padRowBytes('SEND DATE', receipt.sendDate));
-    body = body.concat(padRowBytes('SEND TIME', receipt.sentTime));
-    body = body.concat(padRowBytes('CREATED', receipt.createdAt));
+
+    body = body.concat(
+      padRowBytes('TRACKING', receipt.tracking)
+    );
+
+    body = body.concat(
+      padRowBytes('SEND DATE', receipt.sendDate)
+    );
+
+    body = body.concat(
+      padRowBytes('SEND TIME', receipt.sentTime)
+    );
+
+    body = body.concat(
+      padRowBytes('CREATED', receipt.createdAt)
+    );
+
     body = body.concat(separatorBytes());
-    body = body.concat(asciiBytes('SENDER INFORMATION\n'));
-    body = body.concat(padRowBytes('Name', receipt.senderName));
-    body = body.concat(padRowBytes('Phone', receipt.senderPhone));
-    body = body.concat(padRowBytes('From', receipt.fromLocation));
+
+    body = body.concat(
+      asciiBytes('SENDER INFORMATION\n')
+    );
+
+    body = body.concat(
+      padRowBytes('Name', receipt.senderName)
+    );
+
+    body = body.concat(
+      padRowBytes('Phone', receipt.senderPhone)
+    );
+
+    body = body.concat(
+      padRowBytes('From', receipt.fromLocation)
+    );
+
     body = body.concat(separatorBytes());
-    body = body.concat(asciiBytes('RECIPIENT INFORMATION\n'));
-    body = body.concat(padRowBytes('Name', receipt.recipientName));
-    body = body.concat(padRowBytes('Phone', receipt.recipientPhone));
-    body = body.concat(padRowBytes('Dest', receipt.destination));
+
+    body = body.concat(
+      asciiBytes('RECIPIENT INFORMATION\n')
+    );
+
+    body = body.concat(
+      padRowBytes('Name', receipt.recipientName)
+    );
+
+    body = body.concat(
+      padRowBytes('Phone', receipt.recipientPhone)
+    );
+
+    body = body.concat(
+      padRowBytes('Dest', receipt.destination)
+    );
+
     body = body.concat(separatorBytes());
-    body = body.concat(asciiBytes('COURIER DETAILS\n'));
-    body = body.concat(padRowBytes('Type', receipt.typeName));
-    body = body.concat(padRowBytes('Unit', `${receipt.price} RWF`));
-    body = body.concat(padRowBytes('Qty', receipt.quantity));
-    body = body.concat(padRowBytes('Served by', receipt.fullname || '-'));
-    body = body.concat(padRowBytes('Note', receipt.note || '-'));
+
+    body = body.concat(
+      asciiBytes('COURIER DETAILS\n')
+    );
+
+    body = body.concat(
+      padRowBytes('Type', receipt.typeName)
+    );
+
+    body = body.concat(
+      padRowBytes('Unit', `${receipt.price} RWF`)
+    );
+
+    body = body.concat(
+      padRowBytes('Qty', receipt.quantity)
+    );
+
+    body = body.concat(
+      padRowBytes('Served by', receipt.fullname || '-')
+    );
+
+    body = body.concat(
+      padRowBytes('Note', receipt.note || '-')
+    );
+
     body = body.concat(separatorBytes());
+
     body = body.concat(BOLD_ON);
-    body = body.concat(asciiBytes(`TOTAL: ${receipt.amount} RWF\n`));
+
+    body = body.concat(
+      asciiBytes(`TOTAL: ${receipt.amount} RWF\n`)
+    );
+
     body = body.concat(BOLD_OFF);
     body = body.concat(separatorBytes());
+
     await write(body);
 
-    // ---------- 5. QR CODE + BARCODE: SAME INVOICE NUMBER ----------
-    // The invoice number encoded in the barcode is also sent in the QR link.
-    const invoiceNumber = String(receipt.tracking || receipt.courierCode || receipt.id);
-    const trackUrl = `https://flashcourier.co.rw/reactflash/scan_invoice.php?invoice=${encodeURIComponent(invoiceNumber)}`;
-    await write(concatBytes(ALIGN_CTR, asciiBytes('SCAN TO TRACK INVOICE\n')));
+    // 6. QR code.
+    printStage = 'QR code';
+
+    const invoiceNumber = String(
+      receipt.tracking ||
+      receipt.courierCode ||
+      receipt.id
+    );
+
+    const trackUrl =
+      'https://flashcourier.co.rw/reactflash/scan_invoice.php?invoice=' +
+      encodeURIComponent(invoiceNumber);
+
+    await write(
+      concatBytes(
+        ALIGN_CTR,
+        asciiBytes('SCAN TO TRACK INVOICE\n')
+      )
+    );
+
     await withTimeout(
       write(qrBytes(trackUrl, 6)),
       PRINTER_TIMEOUT,
       'Print QR'
     );
+
     await write([LF_BYTE]);
 
-    // ---------- 6. BARCODE ----------
-    await write(concatBytes(ALIGN_CTR, asciiBytes('INVOICE NUMBER\n')));
+    // 7. Code 128 barcode.
+    printStage = 'Barcode';
+
+    await write(
+      concatBytes(
+        ALIGN_CTR,
+        asciiBytes('INVOICE NUMBER\n')
+      )
+    );
+
     await withTimeout(
       write(code128Bytes(invoiceNumber)),
       PRINTER_TIMEOUT,
       'Print barcode'
     );
+
     await write([LF_BYTE]);
 
-    // ---------- 7. Footer + cut ----------
-    await write(concatBytes(
-      ALIGN_CTR,
-      asciiBytes('\nThank you for choosing FLASH COURIER!\n'),
-      FEED,
-      CUT
-    ));
+    // 8. Footer and paper cut.
+    printStage = 'Receipt footer and paper cut';
 
-    return { success: true, error: null };
+    await write(
+      concatBytes(
+        ALIGN_CTR,
+        asciiBytes(
+          '\nThank you for choosing FLASH COURIER!\n'
+        ),
+        FEED,
+        CUT
+      )
+    );
+
+    return {
+      success: true,
+      error: null,
+    };
+
   } catch (error) {
+    console.error(
+      `Printing failed at stage: ${printStage}`,
+      error
+    );
+
     return {
       success: false,
+      stage: printStage,
       error: error?.message || 'Unknown printing error.',
     };
+
   } finally {
     if (connected && address) {
       try {
         await RNBluetoothClassic.disconnectFromDevice(address);
-      } catch (_) {
-        /* swallow */
+      } catch (error) {
+        console.warn('Printer disconnect warning:', error);
       }
     }
   }
@@ -488,39 +740,78 @@ const printReceipt = async (receipt, printer) => {
 
 const normalizeCourierResponse = async (response) => {
   let body = response;
+
   if (body && typeof body.json === 'function') {
     if (body.ok === false) {
-      throw new Error(`Server error: HTTP ${body.status || 'unknown'}`);
+      throw new Error(
+        `Server error: HTTP ${body.status || 'unknown'}`
+      );
     }
+
     body = await body.json();
   }
+
   if (!body || typeof body !== 'object') {
     throw new Error('Empty server response.');
   }
-  const candidates = [body.courier, body.data?.courier, body.data, body.result, body];
+
+  const candidates = [
+    body.courier,
+    body.data?.courier,
+    body.data,
+    body.result,
+    body,
+  ];
+
   let courier = null;
-  for (const c of candidates) {
-    if (c && typeof c === 'object' && (c.courier_id || c.id || c.tracking)) {
-      courier = c;
+
+  for (const candidate of candidates) {
+    if (
+      candidate &&
+      typeof candidate === 'object' &&
+      (
+        candidate.courier_id ||
+        candidate.id ||
+        candidate.tracking
+      )
+    ) {
+      courier = candidate;
       break;
     }
   }
-  if (body.ok === false || body.success === false || (body.error && !courier)) {
-    throw new Error(body.error || body.message || 'Server rejected courier creation.');
+
+  if (
+    body.ok === false ||
+    body.success === false ||
+    (body.error && !courier)
+  ) {
+    throw new Error(
+      body.error ||
+      body.message ||
+      'Server rejected courier creation.'
+    );
   }
+
   if (!courier) {
     throw new Error(
       'No courier information returned by server: ' +
-        JSON.stringify(body).slice(0, 300)
+      JSON.stringify(body).slice(0, 300)
     );
   }
+
   const sms =
-    body.sms?.status || body.sms ||
-    courier.sms?.status || courier.sms || null;
+    body.sms?.status ||
+    body.sms ||
+    courier.sms?.status ||
+    courier.sms ||
+    null;
+
   return {
     courier: {
       ...courier,
-      id: courier.id || courier.courier_id || courier.tracking,
+      id: courier.id ||
+        courier.courier_id ||
+        courier.tracking,
     },
     sms,
   };
@@ -532,72 +823,114 @@ const normalizeCourierResponse = async (response) => {
 
 export default function CreateCourierScreen({ navigation }) {
   const mountedRef = useRef(true);
+  const submitLock = useRef(false);
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [formData, setFormData] = useState(null);
+
+  const [senderName, setSenderName] = useState('');
+  const [senderPhone, setSenderPhone] = useState('');
+
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
+
+  const [typeId, setTypeId] = useState(null);
+  const [quantity, setQuantity] = useState('1');
+
+  const [receivingAt, setReceivingAt] = useState('');
+  const [partnerId, setPartnerId] = useState(null);
+
+  const [sendDate, setSendDate] = useState(getLocalDate());
+  const [sendingTime, setSendingTime] = useState('');
+
+  const [note, setNote] = useState('');
+
+  const [price, setPrice] = useState('0');
+  const [amount, setAmount] = useState('0');
+
+  const [printers, setPrinters] = useState([]);
+  const [selectedPrinter, setSelectedPrinter] = useState(null);
+
+  const [printerSelectionVisible, setPrinterSelectionVisible] =
+    useState(false);
+
+  const [discovering, setDiscovering] = useState(false);
+  const [printing, setPrinting] = useState(false);
+
+  const [showIOSDatePicker, setShowIOSDatePicker] =
+    useState(false);
+
+  const [showIOSTimePicker, setShowIOSTimePicker] =
+    useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
+
     return () => {
       mountedRef.current = false;
     };
   }, []);
 
+  const safeSet = useCallback((setter, value) => {
+    if (mountedRef.current) {
+      setter(value);
+    }
+  }, []);
+
+  // Load saved printer.
   useEffect(() => {
     let active = true;
+
     AsyncStorage.getItem(SAVED_PRINTER_KEY)
       .then((saved) => {
         if (!active || !saved) return;
+
         const printer = JSON.parse(saved);
+
         if (printer && (printer.address || printer.macAddress)) {
-          setSelectedPrinter(printer);
+          setSelectedPrinter({
+            ...printer,
+            address: printer.address || printer.macAddress,
+          });
+
           setPrinterSelectionVisible(false);
         }
       })
-      .catch((error) => console.warn('Unable to load saved printer:', error));
-    return () => { active = false; };
+      .catch((error) => {
+        console.warn('Unable to load saved printer:', error);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const submitLock = useRef(false);
-
-  const [formData, setFormData] = useState(null);
-  const [senderName, setSenderName] = useState('');
-  const [senderPhone, setSenderPhone] = useState('');
-  const [recipientName, setRecipientName] = useState('');
-  const [recipientPhone, setRecipientPhone] = useState('');
-  const [typeId, setTypeId] = useState(null);
-  const [quantity, setQuantity] = useState('1');
-  const [receivingAt, setReceivingAt] = useState('');
-  const [partnerId, setPartnerId] = useState(null);
-  const [sendDate, setSendDate] = useState(getLocalDate());
-  const [sendingTime, setSendingTime] = useState('');
-  const [note, setNote] = useState('');
-  const [price, setPrice] = useState('0');
-  const [amount, setAmount] = useState('0');
-  const [printers, setPrinters] = useState([]);
-  const [selectedPrinter, setSelectedPrinter] = useState(null);
-  const [printerSelectionVisible, setPrinterSelectionVisible] = useState(false);
-  const [discovering, setDiscovering] = useState(false);
-  const [printing, setPrinting] = useState(false);
-  const [showIOSDatePicker, setShowIOSDatePicker] = useState(false);
-  const [showIOSTimePicker, setShowIOSTimePicker] = useState(false);
-
-  const safeSet = useCallback((setter, value) => {
-    if (mountedRef.current) setter(value);
-  }, []);
+  // ==========================================================
+  // DATE PICKER
+  // ==========================================================
 
   const openDatePicker = useCallback(() => {
     const currentDate = stringToDate(sendDate);
+
     const minimumDate = new Date();
+
     minimumDate.setHours(0, 0, 0, 0);
+
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: currentDate,
         mode: 'date',
         display: 'calendar',
         minimumDate,
+
         onChange: (event, selectedDate) => {
           if (event.type === 'set' && selectedDate) {
-            safeSet(setSendDate, dateToString(selectedDate));
+            safeSet(
+              setSendDate,
+              dateToString(selectedDate)
+            );
           }
         },
       });
@@ -606,17 +939,26 @@ export default function CreateCourierScreen({ navigation }) {
     }
   }, [sendDate, safeSet]);
 
+  // ==========================================================
+  // TIME PICKER
+  // ==========================================================
+
   const openTimePicker = useCallback(() => {
     const currentTime = stringToTime(sendingTime);
+
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: currentTime,
         mode: 'time',
         display: 'clock',
         is24Hour: true,
+
         onChange: (event, selectedDate) => {
           if (event.type === 'set' && selectedDate) {
-            safeSet(setSendingTime, timeToString(selectedDate));
+            safeSet(
+              setSendingTime,
+              timeToString(selectedDate)
+            );
           }
         },
       });
@@ -625,96 +967,173 @@ export default function CreateCourierScreen({ navigation }) {
     }
   }, [sendingTime, safeSet]);
 
-  const saveSelectedPrinter = useCallback(async (printer) => {
-    if (!printer) return;
-    const normalized = {
-      id: printer.id || printer.address || printer.macAddress,
-      name: printer.name || printer.deviceName || 'VBTPRINTER',
-      deviceName: printer.deviceName || printer.name || 'VBTPRINTER',
-      address: printer.address || printer.macAddress,
-      macAddress: printer.macAddress || printer.address,
-    };
-    safeSet(setSelectedPrinter, normalized);
-    safeSet(setPrinterSelectionVisible, false);
-    try {
-      await AsyncStorage.setItem(SAVED_PRINTER_KEY, JSON.stringify(normalized));
-    } catch (error) {
-      Alert.alert('Printer Save Failed', 'The printer is selected, but could not be saved for next time.');
-      console.warn('Unable to save printer:', error);
-    }
-  }, [safeSet]);
+  // ==========================================================
+  // SAVE PRINTER
+  // ==========================================================
+
+  const saveSelectedPrinter = useCallback(
+    async (printer) => {
+      if (!printer) return;
+
+      const normalized = {
+        id:
+          printer.id ||
+          printer.address ||
+          printer.macAddress,
+
+        name:
+          printer.name ||
+          printer.deviceName ||
+          'VBTPRINTER',
+
+        deviceName:
+          printer.deviceName ||
+          printer.name ||
+          'VBTPRINTER',
+
+        address:
+          printer.address ||
+          printer.macAddress,
+
+        macAddress:
+          printer.macAddress ||
+          printer.address,
+      };
+
+      safeSet(setSelectedPrinter, normalized);
+      safeSet(setPrinterSelectionVisible, false);
+
+      try {
+        await AsyncStorage.setItem(
+          SAVED_PRINTER_KEY,
+          JSON.stringify(normalized)
+        );
+      } catch (error) {
+        Alert.alert(
+          'Printer Save Failed',
+          'The printer is selected, but could not be saved for next time.'
+        );
+
+        console.warn('Unable to save printer:', error);
+      }
+    },
+    [safeSet]
+  );
+
+  // ==========================================================
+  // DISCOVER PRINTERS
+  // ==========================================================
 
   const handleDiscoverPrinters = useCallback(async () => {
     if (discovering || !mountedRef.current) return;
+
     safeSet(setDiscovering, true);
+
     try {
       const devices = await discoverPrinters();
+
       if (!mountedRef.current) return;
+
       safeSet(setPrinters, devices);
+
       if (devices.length === 0) {
         Alert.alert(
           'No Printers Found',
           'No paired Bluetooth devices were found.\n\n' +
-            'Open Android Bluetooth settings and pair the Q2i printer (VBTPRINTER), then try again.',
-          [{ text: 'OK' }],
-          { cancelable: false }
+          'Open Android Bluetooth settings and pair the Q2i printer (VBTPRINTER), then try again.'
         );
+
         return;
       }
+
       const firstPrinter = devices[0];
+
       await saveSelectedPrinter(firstPrinter);
+
       Alert.alert(
         'Printer Discovery',
         `${devices.length} paired Bluetooth device(s) found.\n\n` +
-          `Auto-selected: ${firstPrinter.name}\n` +
-          `${firstPrinter.address}`,
-        [{ text: 'OK' }],
-        { cancelable: false }
+        `Auto-selected: ${firstPrinter.name}\n` +
+        `${firstPrinter.address}`
       );
+
     } catch (error) {
       if (!mountedRef.current) return;
+
       Alert.alert(
         'Printer Discovery Failed',
-        error.message || 'Unable to discover printers.',
-        [{ text: 'OK' }],
-        { cancelable: false }
+        error.message || 'Unable to discover printers.'
       );
+
     } finally {
-      if (mountedRef.current) safeSet(setDiscovering, false);
+      if (mountedRef.current) {
+        safeSet(setDiscovering, false);
+      }
     }
   }, [discovering, safeSet, saveSelectedPrinter]);
 
+  // ==========================================================
+  // LOAD COURIER FORM DATA
+  // ==========================================================
+
   const loadFormData = useCallback(async () => {
     safeSet(setLoading, true);
+
     try {
       const raw = await authFetch(API_FORM);
+
       let data = raw;
+
       if (data && typeof data.json === 'function') {
         if (data.ok === false) {
-          throw new Error(`Failed to load form data. HTTP ${data.status}`);
+          throw new Error(
+            `Failed to load form data. HTTP ${data.status}`
+          );
         }
+
         data = await data.json();
       }
-      if (data?.data && !data.types) data = data.data;
-      if (!data || !Array.isArray(data.types)) {
-        throw new Error('Invalid server response: courier types are missing.');
+
+      if (data?.data && !data.types) {
+        data = data.data;
       }
-      data.partners = Array.isArray(data.partners) ? data.partners : [];
+
+      if (!data || !Array.isArray(data.types)) {
+        throw new Error(
+          'Invalid server response: courier types are missing.'
+        );
+      }
+
+      data.partners = Array.isArray(data.partners)
+        ? data.partners
+        : [];
+
       if (!mountedRef.current) return;
+
       setFormData(data);
-      if (data.types.length > 0) setTypeId(data.types[0].id);
-      if (data.partners.length > 0) setPartnerId(data.partners[0].id);
+
+      if (data.types.length > 0) {
+        setTypeId(data.types[0].id);
+      }
+
+      if (data.partners.length > 0) {
+        setPartnerId(data.partners[0].id);
+      }
+
       setSendingTime('');
+
     } catch (error) {
       if (!mountedRef.current) return;
+
       Alert.alert(
         'Loading Error',
-        error.message || 'Unable to load courier form.',
-        [{ text: 'OK' }],
-        { cancelable: false }
+        error.message || 'Unable to load courier form.'
       );
+
     } finally {
-      if (mountedRef.current) safeSet(setLoading, false);
+      if (mountedRef.current) {
+        safeSet(setLoading, false);
+      }
     }
   }, [safeSet]);
 
@@ -722,178 +1141,435 @@ export default function CreateCourierScreen({ navigation }) {
     loadFormData();
   }, [loadFormData]);
 
+  // ==========================================================
+  // AUTOMATIC PRICE CALCULATION
+  // ==========================================================
+
   useEffect(() => {
     if (!formData || !typeId) {
       setPrice('0');
       setAmount('0');
       return;
     }
+
     const selectedType = formData.types.find(
-      (item) => normalizeId(item.id) === normalizeId(typeId)
+      (item) =>
+        normalizeId(item.id) === normalizeId(typeId)
     );
+
     if (!selectedType) return;
-    const unitPrice = Number(selectedType.base_price) || 0;
-    const qty = Math.max(1, parseInt(quantity, 10) || 1);
+
+    const unitPrice =
+      Number(selectedType.base_price) || 0;
+
+    const qty = Math.max(
+      1,
+      parseInt(quantity, 10) || 1
+    );
+
     setPrice(String(unitPrice));
     setAmount(String(unitPrice * qty));
+
   }, [typeId, quantity, formData]);
+
+  // ==========================================================
+  // RESET FORM
+  // ==========================================================
 
   const resetForm = useCallback(() => {
     setSenderName('');
     setSenderPhone('');
+
     setRecipientName('');
     setRecipientPhone('');
+
     setReceivingAt('');
     setNote('');
+
     setQuantity('1');
+
     setSendDate(getLocalDate());
     setSendingTime('');
-    if (formData?.types?.length) setTypeId(formData.types[0].id);
-    if (formData?.partners?.length) setPartnerId(formData.partners[0].id);
+
+    if (formData?.types?.length) {
+      setTypeId(formData.types[0].id);
+    }
+
+    if (formData?.partners?.length) {
+      setPartnerId(formData.partners[0].id);
+    }
   }, [formData]);
 
+  // ==========================================================
+  // FORM VALIDATION
+  // ==========================================================
+
   const validateForm = useCallback(() => {
-    const fail = (title, msg) => {
-      Alert.alert(title, msg, [{ text: 'OK' }], { cancelable: false });
+    const fail = (title, message) => {
+      Alert.alert(title, message);
       return false;
     };
-    if (!senderName.trim()) return fail('Missing Information', 'Enter sender full name.');
-    if (!senderPhone.trim()) return fail('Missing Information', 'Enter sender phone number.');
-    if (!recipientName.trim()) return fail('Missing Information', 'Enter recipient full name.');
-    if (!recipientPhone.trim()) return fail('Missing Information', 'Enter recipient phone number.');
-    if (!receivingAt.trim()) return fail('Missing Destination', 'Enter destination address.');
-    if (!typeId) return fail('Missing Information', 'Select courier type.');
-    if (!quantity.trim() || !/^\d+$/.test(quantity) || parseInt(quantity, 10) < 1) {
-      return fail('Invalid Quantity', 'Quantity must be a positive whole number.');
+
+    if (!senderName.trim()) {
+      return fail(
+        'Missing Information',
+        'Enter sender full name.'
+      );
     }
-    const normalizedSendDate = normalizeCalendarDate(sendDate);
-    if (!normalizedSendDate) return fail('Invalid Date', 'Please select a valid calendar date.');
-    if (normalizedSendDate < getLocalDate()) return fail('Invalid Date', 'Send date cannot be in the past.');
-    if (!sendingTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(sendingTime)) {
-      return fail('Missing Sending Time', 'Please tap the clock field and select the sending time.');
+
+    if (!senderPhone.trim()) {
+      return fail(
+        'Missing Information',
+        'Enter sender phone number.'
+      );
     }
+
+    if (!recipientName.trim()) {
+      return fail(
+        'Missing Information',
+        'Enter recipient full name.'
+      );
+    }
+
+    if (!recipientPhone.trim()) {
+      return fail(
+        'Missing Information',
+        'Enter recipient phone number.'
+      );
+    }
+
+    if (!receivingAt.trim()) {
+      return fail(
+        'Missing Destination',
+        'Enter destination address.'
+      );
+    }
+
+    if (!typeId) {
+      return fail(
+        'Missing Information',
+        'Select courier type.'
+      );
+    }
+
+    if (
+      !quantity.trim() ||
+      !/^\d+$/.test(quantity) ||
+      parseInt(quantity, 10) < 1
+    ) {
+      return fail(
+        'Invalid Quantity',
+        'Quantity must be a positive whole number.'
+      );
+    }
+
+    const normalizedSendDate =
+      normalizeCalendarDate(sendDate);
+
+    if (!normalizedSendDate) {
+      return fail(
+        'Invalid Date',
+        'Please select a valid calendar date.'
+      );
+    }
+
+    if (normalizedSendDate < getLocalDate()) {
+      return fail(
+        'Invalid Date',
+        'Send date cannot be in the past.'
+      );
+    }
+
+    if (
+      !sendingTime ||
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(sendingTime)
+    ) {
+      return fail(
+        'Missing Sending Time',
+        'Please tap the clock field and select the sending time.'
+      );
+    }
+
     if (!formData?.default_location?.id) {
-      return fail('Missing Location', 'Default sending location is not configured.');
+      return fail(
+        'Missing Location',
+        'Default sending location is not configured.'
+      );
     }
-    if (!formData.types.some((i) => normalizeId(i.id) === normalizeId(typeId))) {
-      return fail('Invalid Courier Type', 'Select a valid courier type.');
+
+    if (
+      !formData.types.some(
+        (item) =>
+          normalizeId(item.id) === normalizeId(typeId)
+      )
+    ) {
+      return fail(
+        'Invalid Courier Type',
+        'Select a valid courier type.'
+      );
     }
+
     if (
       formData.partners.length > 0 &&
-      !formData.partners.some((i) => normalizeId(i.id) === normalizeId(partnerId))
+      !formData.partners.some(
+        (item) =>
+          normalizeId(item.id) === normalizeId(partnerId)
+      )
     ) {
-      return fail('Invalid Partner', 'Select a valid carrier partner.');
+      return fail(
+        'Invalid Partner',
+        'Select a valid carrier partner.'
+      );
     }
+
     return true;
   }, [
-    senderName, senderPhone, recipientName, recipientPhone,
-    receivingAt, typeId, quantity, sendDate, sendingTime,
-    partnerId, formData,
+    senderName,
+    senderPhone,
+    recipientName,
+    recipientPhone,
+    receivingAt,
+    typeId,
+    quantity,
+    sendDate,
+    sendingTime,
+    partnerId,
+    formData,
   ]);
+
+  // ==========================================================
+  // BUILD RECEIPT DATA
+  // ==========================================================
 
   const buildReceipt = useCallback(
     (courier) => {
-      const code = courier.courier_id || courier.tracking || courier.id;
-      const courierId = courier.id || courier.courier_id;
+      const code =
+        courier.courier_id ||
+        courier.tracking ||
+        courier.id;
+
+      const courierId =
+        courier.id ||
+        courier.courier_id;
+
       const selectedType = formData.types.find(
-        (i) => normalizeId(i.id) === normalizeId(typeId)
+        (item) =>
+          normalizeId(item.id) === normalizeId(typeId)
       );
+
       return {
         id: courierId,
+
         courierCode: String(code),
-        tracking: String(courier.tracking || code),
+
+        tracking: String(
+          courier.tracking || code
+        ),
+
         fromLocation:
           courier.location_name ||
           courier.slocation ||
           formData.default_location?.location_name ||
           formData.default_location?.name ||
           '-',
-        senderName: courier.sender_name || senderName,
-        senderPhone: courier.sender_phone || senderPhone,
-        recipientName: courier.recipient_name || recipientName,
-        recipientPhone: courier.recipient_phone || recipientPhone,
-        destination: courier.receiving_at || courier.rlocation || receivingAt || '-',
-        typeName: courier.type_name || selectedType?.type_name || '-',
-        price: formatMoney(courier.price ?? price),
-        quantity: courier.quantity || quantity,
-        amount: formatMoney(courier.amount ?? amount),
-        sendDate: courier.send_date || sendDate,
-        sentTime: courier.sent_time || sendingTime || '-',
-        note: courier.note || note || '-',
-        fullname: courier.created_by_name || courier.fullname || '',
-        createdAt: courier.created_at || new Date().toLocaleString(),
+
+        senderName:
+          courier.sender_name || senderName,
+
+        senderPhone:
+          courier.sender_phone || senderPhone,
+
+        recipientName:
+          courier.recipient_name || recipientName,
+
+        recipientPhone:
+          courier.recipient_phone || recipientPhone,
+
+        destination:
+          courier.receiving_at ||
+          courier.rlocation ||
+          receivingAt ||
+          '-',
+
+        typeName:
+          courier.type_name ||
+          selectedType?.type_name ||
+          '-',
+
+        price: formatMoney(
+          courier.price ?? price
+        ),
+
+        quantity:
+          courier.quantity || quantity,
+
+        amount: formatMoney(
+          courier.amount ?? amount
+        ),
+
+        sendDate:
+          courier.send_date || sendDate,
+
+        sentTime:
+          courier.sent_time || sendingTime || '-',
+
+        note:
+          courier.note || note || '-',
+
+        fullname:
+          courier.created_by_name ||
+          courier.fullname ||
+          '',
+
+        createdAt:
+          courier.created_at ||
+          new Date().toLocaleString(),
       };
     },
     [
-      formData, typeId, senderName, senderPhone, recipientName,
-      recipientPhone, receivingAt, price, quantity, amount,
-      sendDate, sendingTime, note,
+      formData,
+      typeId,
+      senderName,
+      senderPhone,
+      recipientName,
+      recipientPhone,
+      receivingAt,
+      price,
+      quantity,
+      amount,
+      sendDate,
+      sendingTime,
+      note,
     ]
   );
 
+  // ==========================================================
+  // CREATE COURIER AND PRINT RECEIPT
+  // ==========================================================
+
   const handleSubmit = useCallback(async () => {
     if (submitLock.current || submitting) return;
+
     if (!validateForm()) return;
+
     submitLock.current = true;
+
     setSubmitting(true);
+
     try {
       const response = await authFetch(API_CREATE, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+
         body: JSON.stringify({
           sending_from: formData.default_location.id,
+
           sender_name: senderName.trim(),
           sender_phone: senderPhone.trim(),
+
           recipient_name: recipientName.trim(),
           recipient_phone: recipientPhone.trim(),
+
           type_id: typeId,
+
           price,
           quantity,
           amount,
+
           receiving_at: receivingAt.trim(),
+
           partner_id: partnerId,
+
           send_date: normalizeCalendarDate(sendDate),
+
           sending_time: sendingTime,
+
           note: note.trim(),
         }),
       });
-      const { courier } = await normalizeCourierResponse(response);
-      const code = courier.courier_id || courier.tracking || courier.id;
+
+      const { courier } =
+        await normalizeCourierResponse(response);
+
+      const code =
+        courier.courier_id ||
+        courier.tracking ||
+        courier.id;
+
       const receipt = buildReceipt(courier);
 
       if (selectedPrinter) {
         setPrinting(true);
-        const printResult = await printReceipt(receipt, selectedPrinter);
+
+        const printResult = await printReceipt(
+          receipt,
+          selectedPrinter
+        );
+
         setPrinting(false);
+
         resetForm();
+
         if (printResult.success) {
           Alert.alert(
-            'Courier Created Successfully',
-            `Courier: ${code}\n\nReceipt with QR and barcode printed successfully.`,
-            [{ text: 'OK', onPress: () => navigation.replace('Dashboard') }],
+            'Courier Created',
+            `Courier: ${code}\n\n` +
+            'Receipt data was sent to the printer. Please verify that the receipt was physically printed.',
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.replace('Dashboard'),
+              },
+            ],
             { cancelable: false }
           );
+
         } else {
           Alert.alert(
             'Courier Created - Printing Failed',
-            `Courier: ${code}\n\nThe courier was saved, but the receipt could not be printed.\n\n` +
-              `Reason: ${printResult.error}\n\nYou can print again from courier records.`,
-            [{ text: 'OK', onPress: () => navigation.replace('Dashboard') }],
+
+            `Courier: ${code}\n\n` +
+            'The courier was saved, but receipt printing failed.\n\n' +
+            `Failed at: ${printResult.stage || 'Unknown stage'}\n\n` +
+            `Reason: ${printResult.error}\n\n` +
+            'You can print again from courier records.',
+
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.replace('Dashboard'),
+              },
+            ],
             { cancelable: false }
           );
         }
+
       } else {
         resetForm();
+
         Alert.alert(
           'Courier Created',
-          `Courier ${code} created successfully.\n\nNo printer was selected, so no receipt was printed.`,
-          [{ text: 'OK', onPress: () => navigation.replace('Dashboard') }],
+
+          `Courier ${code} created successfully.\n\n` +
+          'No printer was selected, so no receipt was printed.',
+
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.replace('Dashboard'),
+            },
+          ],
           { cancelable: false }
         );
       }
+
     } catch (error) {
       if (mountedRef.current) {
         setPrinting(false);
+
         Alert.alert(
           'Courier Creation Failed',
           error.message || 'An unexpected error occurred.',
@@ -901,124 +1577,292 @@ export default function CreateCourierScreen({ navigation }) {
           { cancelable: false }
         );
       }
+
     } finally {
       submitLock.current = false;
+
       if (mountedRef.current) {
         setSubmitting(false);
         setPrinting(false);
       }
     }
   }, [
-    submitting, validateForm, formData, senderName, senderPhone,
-    recipientName, recipientPhone, typeId, price, quantity, amount,
-    receivingAt, partnerId, sendDate, sendingTime, note,
-    selectedPrinter, buildReceipt, resetForm, navigation,
+    submitting,
+    validateForm,
+    formData,
+    senderName,
+    senderPhone,
+    recipientName,
+    recipientPhone,
+    typeId,
+    price,
+    quantity,
+    amount,
+    receivingAt,
+    partnerId,
+    sendDate,
+    sendingTime,
+    note,
+    selectedPrinter,
+    buildReceipt,
+    resetForm,
+    navigation,
   ]);
 
+  // ==========================================================
+  // PRINTER OPTIONS
+  // ==========================================================
+
   const printerOptions = useMemo(() => {
-    return printers.map((p) => ({
-      ...p,
-      active: selectedPrinter?.id === p.id,
+    return printers.map((printer) => ({
+      ...printer,
+
+      active:
+        selectedPrinter?.id === printer.id ||
+        selectedPrinter?.address === printer.address,
     }));
   }, [printers, selectedPrinter]);
+
+  // ==========================================================
+  // LOADING SCREEN
+  // ==========================================================
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#008c8c" />
-        <Text style={styles.loadingText}>Loading courier information...</Text>
+        <ActivityIndicator
+          size="large"
+          color="#008c8c"
+        />
+
+        <Text style={styles.loadingText}>
+          Loading courier information...
+        </Text>
       </View>
     );
   }
+
+  // ==========================================================
+  // ERROR SCREEN
+  // ==========================================================
 
   if (!formData) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>Failed to load courier form data.</Text>
-        <Pressable style={styles.retryBtn} onPress={loadFormData}>
-          <Text style={styles.retryText}>Retry</Text>
+        <Text style={styles.errorText}>
+          Failed to load courier form data.
+        </Text>
+
+        <Pressable
+          style={styles.retryBtn}
+          onPress={loadFormData}
+        >
+          <Text style={styles.retryText}>
+            Retry
+          </Text>
         </Pressable>
+
         <Pressable onPress={() => navigation.goBack()}>
-          <Text style={styles.backBtn}>Go Back</Text>
+          <Text style={styles.backBtn}>
+            Go Back
+          </Text>
         </Pressable>
       </View>
     );
   }
 
+  // ==========================================================
+  // MAIN USER INTERFACE
+  // ==========================================================
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={
+        Platform.OS === 'ios'
+          ? 'padding'
+          : undefined
+      }
     >
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+
+        {/* HEADER */}
+
         <View style={styles.header}>
           <Pressable onPress={() => navigation.goBack()}>
-            <Text style={styles.backBtn}>← Back</Text>
+            <Text style={styles.backBtn}>
+              ← Back
+            </Text>
           </Pressable>
-        <Image
-  source={require('../../assets/icon.png')}
-  style={styles.headerLogo}
-  resizeMode="contain"
-  accessibilityLabel="Flash Courier logo"
-/>
-          <Text style={styles.title}>New Courier</Text>
-          <Text style={styles.posBadge}>Q2i POS</Text>
+
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.headerLogo}
+            resizeMode="contain"
+            accessibilityLabel="Flash Courier logo"
+          />
+
+          <Text style={styles.title}>
+            New Courier
+          </Text>
+
+          <Text style={styles.posBadge}>
+            Q2i POS
+          </Text>
         </View>
+
+        {/* PRINTER SECTION */}
 
         {Platform.OS === 'android' && (
           <View style={styles.printerSection}>
             {selectedPrinter && !printerSelectionVisible ? (
               <View>
-                <Text style={styles.section}>ESC/POS Thermal Printer</Text>
-                <Text style={styles.deviceText}>Saved printer: {selectedPrinter.name || selectedPrinter.deviceName || 'VBTPRINTER'}</Text>
-                <Text style={styles.printerAddress}>{selectedPrinter.address || selectedPrinter.macAddress}</Text>
+                <Text style={styles.section}>
+                  ESC/POS Thermal Printer
+                </Text>
+
+                <Text style={styles.deviceText}>
+                  Saved printer: {
+                    selectedPrinter.name ||
+                    selectedPrinter.deviceName ||
+                    'VBTPRINTER'
+                  }
+                </Text>
+
+                <Text style={styles.printerAddress}>
+                  {selectedPrinter.address ||
+                    selectedPrinter.macAddress}
+                </Text>
+
                 <Pressable
                   style={styles.discoverBtn}
-                  onPress={() => setPrinterSelectionVisible(true)}
+                  onPress={() =>
+                    setPrinterSelectionVisible(true)
+                  }
                 >
-                  <Text style={styles.discoverText}>CHANGE PRINTER</Text>
+                  <Text style={styles.discoverText}>
+                    CHANGE PRINTER
+                  </Text>
                 </Pressable>
               </View>
             ) : (
               <View>
-                <Text style={styles.section}>ESC/POS Thermal Printer</Text>
-                <Text style={styles.deviceText}>Device: Q2i Android POS</Text>
-                <Pressable style={styles.discoverBtn} onPress={handleDiscoverPrinters} disabled={discovering}>
-                  {discovering ? <ActivityIndicator color="#fff" /> : <Text style={styles.discoverText}>SEARCH FOR PRINTERS</Text>}
+                <Text style={styles.section}>
+                  ESC/POS Thermal Printer
+                </Text>
+
+                <Text style={styles.deviceText}>
+                  Device: Q2i Android POS
+                </Text>
+
+                <Pressable
+                  style={styles.discoverBtn}
+                  onPress={handleDiscoverPrinters}
+                  disabled={discovering}
+                >
+                  {discovering ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.discoverText}>
+                      SEARCH FOR PRINTERS
+                    </Text>
+                  )}
                 </Pressable>
+
                 {printerOptions.length > 0 && (
                   <View style={{ marginTop: 12 }}>
-                    <Text style={styles.deviceText}>Available Bluetooth devices:</Text>
+                    <Text style={styles.deviceText}>
+                      Available Bluetooth devices:
+                    </Text>
+
                     {printerOptions.map((printer) => (
                       <Pressable
                         key={printer.id || printer.address}
-                        style={[styles.printerOption, printer.active && styles.printerOptionActive]}
-                        onPress={() => saveSelectedPrinter(printer)}
+                        style={[
+                          styles.printerOption,
+                          printer.active &&
+                            styles.printerOptionActive,
+                        ]}
+                        onPress={() =>
+                          saveSelectedPrinter(printer)
+                        }
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.optionText, printer.active && styles.optionTextActive]}>{printer.name || printer.deviceName || 'Unknown printer'}</Text>
-                          <Text style={[styles.printerAddress, printer.active && styles.optionTextActive]}>{printer.address || printer.macAddress}</Text>
+                          <Text
+                            style={[
+                              styles.optionText,
+                              printer.active &&
+                                styles.optionTextActive,
+                            ]}
+                          >
+                            {printer.name ||
+                              printer.deviceName ||
+                              'Unknown printer'}
+                          </Text>
+
+                          <Text
+                            style={[
+                              styles.printerAddress,
+                              printer.active &&
+                                styles.optionTextActive,
+                            ]}
+                          >
+                            {printer.address ||
+                              printer.macAddress}
+                          </Text>
                         </View>
-                        <Text style={[styles.selectText, printer.active && styles.optionTextActive]}>{printer.active ? 'SELECTED' : 'SELECT'}</Text>
+
+                        <Text
+                          style={[
+                            styles.selectText,
+                            printer.active &&
+                              styles.optionTextActive,
+                          ]}
+                        >
+                          {printer.active
+                            ? 'SELECTED'
+                            : 'SELECT'}
+                        </Text>
                       </Pressable>
                     ))}
                   </View>
                 )}
-                <Text style={styles.hint}>Pair the Q2i printer (VBTPRINTER) in Android Bluetooth settings before searching.</Text>
+
+                <Text style={styles.hint}>
+                  Pair the Q2i printer (VBTPRINTER) in Android Bluetooth settings before searching.
+                </Text>
+
                 {selectedPrinter && (
-                  <Pressable onPress={() => setPrinterSelectionVisible(false)} style={{ marginTop: 8 }}>
-                    <Text style={styles.selectedPrinter}>Use saved printer: {selectedPrinter.name || selectedPrinter.deviceName || 'VBTPRINTER'} · Hide selection</Text>
+                  <Pressable
+                    onPress={() =>
+                      setPrinterSelectionVisible(false)
+                    }
+                    style={{ marginTop: 8 }}
+                  >
+                    <Text style={styles.selectedPrinter}>
+                      Use saved printer: {
+                        selectedPrinter.name ||
+                        selectedPrinter.deviceName ||
+                        'VBTPRINTER'
+                      } · Hide selection
+                    </Text>
                   </Pressable>
                 )}
               </View>
             )}
           </View>
         )}
-        <Text style={styles.section}>Sender Information</Text>
+
+        {/* SENDER */}
+
+        <Text style={styles.section}>
+          Sender Information
+        </Text>
+
         <TextInput
           style={styles.input}
           placeholder="Sender full name *"
@@ -1026,6 +1870,7 @@ export default function CreateCourierScreen({ navigation }) {
           value={senderName}
           onChangeText={setSenderName}
         />
+
         <TextInput
           style={styles.input}
           placeholder="Sender phone *"
@@ -1035,7 +1880,12 @@ export default function CreateCourierScreen({ navigation }) {
           onChangeText={setSenderPhone}
         />
 
-        <Text style={styles.section}>Recipient Information</Text>
+        {/* RECIPIENT */}
+
+        <Text style={styles.section}>
+          Recipient Information
+        </Text>
+
         <TextInput
           style={styles.input}
           placeholder="Recipient full name *"
@@ -1043,6 +1893,7 @@ export default function CreateCourierScreen({ navigation }) {
           value={recipientName}
           onChangeText={setRecipientName}
         />
+
         <TextInput
           style={styles.input}
           placeholder="Recipient phone *"
@@ -1052,7 +1903,12 @@ export default function CreateCourierScreen({ navigation }) {
           onChangeText={setRecipientPhone}
         />
 
-        <Text style={styles.section}>Destination</Text>
+        {/* DESTINATION */}
+
+        <Text style={styles.section}>
+          Destination
+        </Text>
+
         <TextInput
           style={styles.input}
           placeholder="Destination address *"
@@ -1061,20 +1917,41 @@ export default function CreateCourierScreen({ navigation }) {
           onChangeText={setReceivingAt}
         />
 
-        <Text style={styles.section}>Courier Type</Text>
+        {/* COURIER TYPE */}
+
+        <Text style={styles.section}>
+          Courier Type
+        </Text>
+
         <View style={styles.optionsGrid}>
           {formData.types.map((item) => {
-            const active = normalizeId(typeId) === normalizeId(item.id);
+            const active =
+              normalizeId(typeId) === normalizeId(item.id);
+
             return (
               <Pressable
                 key={item.id}
-                style={[styles.optionBtn, active && styles.optionBtnActive]}
+                style={[
+                  styles.optionBtn,
+                  active && styles.optionBtnActive,
+                ]}
                 onPress={() => setTypeId(item.id)}
               >
-                <Text style={[styles.optionText, active && styles.optionTextActive]}>
+                <Text
+                  style={[
+                    styles.optionText,
+                    active && styles.optionTextActive,
+                  ]}
+                >
                   {item.type_name}
                 </Text>
-                <Text style={[styles.optionPrice, active && styles.optionTextActive]}>
+
+                <Text
+                  style={[
+                    styles.optionPrice,
+                    active && styles.optionTextActive,
+                  ]}
+                >
                   {formatMoney(item.base_price)} RWF
                 </Text>
               </Pressable>
@@ -1082,45 +1959,97 @@ export default function CreateCourierScreen({ navigation }) {
           })}
         </View>
 
-        <Text style={styles.section}>Quantity</Text>
+        {/* QUANTITY */}
+
+        <Text style={styles.section}>
+          Quantity
+        </Text>
+
         <TextInput
           style={styles.input}
           placeholder="Quantity"
           placeholderTextColor="#999"
           keyboardType="number-pad"
           value={quantity}
-          onChangeText={(v) => setQuantity(v.replace(/[^0-9]/g, ''))}
+          onChangeText={(value) =>
+            setQuantity(value.replace(/[^0-9]/g, ''))
+          }
         />
+
+        {/* PRICE SUMMARY */}
 
         <View style={styles.summary}>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Unit Price</Text>
-            <Text style={styles.summaryValue}>{formatMoney(price)} RWF</Text>
+            <Text style={styles.summaryLabel}>
+              Unit Price
+            </Text>
+
+            <Text style={styles.summaryValue}>
+              {formatMoney(price)} RWF
+            </Text>
           </View>
+
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Quantity</Text>
-            <Text style={styles.summaryValue}>{quantity || '0'}</Text>
+            <Text style={styles.summaryLabel}>
+              Quantity
+            </Text>
+
+            <Text style={styles.summaryValue}>
+              {quantity || '0'}
+            </Text>
           </View>
-          <View style={[styles.summaryRow, styles.summaryTotal]}>
-            <Text style={styles.summaryTotalLabel}>TOTAL</Text>
-            <Text style={styles.summaryTotalValue}>{formatMoney(amount)} RWF</Text>
+
+          <View
+            style={[
+              styles.summaryRow,
+              styles.summaryTotal,
+            ]}
+          >
+            <Text style={styles.summaryTotalLabel}>
+              TOTAL
+            </Text>
+
+            <Text style={styles.summaryTotalValue}>
+              {formatMoney(amount)} RWF
+            </Text>
           </View>
         </View>
 
-        <Text style={styles.section}>Carrier Partner</Text>
+        {/* PARTNER */}
+
+        <Text style={styles.section}>
+          Carrier Partner
+        </Text>
+
         <View style={styles.optionsGrid}>
           {formData.partners.map((item) => {
-            const active = normalizeId(partnerId) === normalizeId(item.id);
+            const active =
+              normalizeId(partnerId) === normalizeId(item.id);
+
             return (
               <Pressable
                 key={item.id}
-                style={[styles.optionBtn, active && styles.optionBtnActive]}
+                style={[
+                  styles.optionBtn,
+                  active && styles.optionBtnActive,
+                ]}
                 onPress={() => setPartnerId(item.id)}
               >
-                <Text style={[styles.optionText, active && styles.optionTextActive]}>
+                <Text
+                  style={[
+                    styles.optionText,
+                    active && styles.optionTextActive,
+                  ]}
+                >
                   {item.partner_name}
                 </Text>
-                <Text style={[styles.optionPrice, active && styles.optionTextActive]}>
+
+                <Text
+                  style={[
+                    styles.optionPrice,
+                    active && styles.optionTextActive,
+                  ]}
+                >
                   {item.transport_type}
                 </Text>
               </Pressable>
@@ -1128,11 +2057,27 @@ export default function CreateCourierScreen({ navigation }) {
           })}
         </View>
 
-        <Text style={styles.section}>Send Date</Text>
-        <Pressable style={styles.pickerField} onPress={openDatePicker}>
-          <Text style={styles.pickerIcon}>📅</Text>
-          <Text style={styles.pickerValue}>{sendDate || 'Select sending date'}</Text>
-          <Text style={styles.pickerAction}>CALENDAR</Text>
+        {/* SEND DATE */}
+
+        <Text style={styles.section}>
+          Send Date
+        </Text>
+
+        <Pressable
+          style={styles.pickerField}
+          onPress={openDatePicker}
+        >
+          <Text style={styles.pickerIcon}>
+            📅
+          </Text>
+
+          <Text style={styles.pickerValue}>
+            {sendDate || 'Select sending date'}
+          </Text>
+
+          <Text style={styles.pickerAction}>
+            CALENDAR
+          </Text>
         </Pressable>
 
         {Platform.OS === 'ios' && showIOSDatePicker && (
@@ -1143,18 +2088,37 @@ export default function CreateCourierScreen({ navigation }) {
             minimumDate={new Date()}
             onChange={(event, selectedDate) => {
               setShowIOSDatePicker(false);
-              if (selectedDate) setSendDate(dateToString(selectedDate));
+
+              if (selectedDate) {
+                setSendDate(dateToString(selectedDate));
+              }
             }}
           />
         )}
 
-        <Text style={styles.section}>Sending Time</Text>
-        <Pressable style={styles.pickerField} onPress={openTimePicker}>
-          <Text style={styles.pickerIcon}>🕒</Text>
-          <Text style={styles.pickerValue}>
-            {sendingTime ? formatTimeForDisplay(sendingTime) : 'Select sending time'}
+        {/* SENDING TIME */}
+
+        <Text style={styles.section}>
+          Sending Time
+        </Text>
+
+        <Pressable
+          style={styles.pickerField}
+          onPress={openTimePicker}
+        >
+          <Text style={styles.pickerIcon}>
+            🕒
           </Text>
-          <Text style={styles.pickerAction}>CLOCK</Text>
+
+          <Text style={styles.pickerValue}>
+            {sendingTime
+              ? formatTimeForDisplay(sendingTime)
+              : 'Select sending time'}
+          </Text>
+
+          <Text style={styles.pickerAction}>
+            CLOCK
+          </Text>
         </Pressable>
 
         {Platform.OS === 'ios' && showIOSTimePicker && (
@@ -1165,14 +2129,25 @@ export default function CreateCourierScreen({ navigation }) {
             is24Hour
             onChange={(event, selectedDate) => {
               setShowIOSTimePicker(false);
-              if (selectedDate) setSendingTime(timeToString(selectedDate));
+
+              if (selectedDate) {
+                setSendingTime(timeToString(selectedDate));
+              }
             }}
           />
         )}
 
-        <Text style={styles.section}>Additional Note (Optional)</Text>
+        {/* NOTE */}
+
+        <Text style={styles.section}>
+          Additional Note (Optional)
+        </Text>
+
         <TextInput
-          style={[styles.input, styles.textArea]}
+          style={[
+            styles.input,
+            styles.textArea,
+          ]}
           placeholder="Any additional notes..."
           placeholderTextColor="#999"
           multiline
@@ -1180,6 +2155,8 @@ export default function CreateCourierScreen({ navigation }) {
           value={note}
           onChangeText={setNote}
         />
+
+        {/* SUBMIT */}
 
         <Pressable
           style={({ pressed }) => [
@@ -1193,18 +2170,24 @@ export default function CreateCourierScreen({ navigation }) {
           {submitting || printing ? (
             <View style={styles.loadingButton}>
               <ActivityIndicator color="#fff" />
+
               <Text style={styles.submitText}>
-                {printing ? 'PRINTING RECEIPT...' : 'PROCESSING...'}
+                {printing
+                  ? 'PRINTING RECEIPT...'
+                  : 'PROCESSING...'}
               </Text>
             </View>
           ) : (
             <Text style={styles.submitText}>
-              {selectedPrinter ? 'CREATE & PRINT RECEIPT' : 'CREATE COURIER'}
+              {selectedPrinter
+                ? 'CREATE & PRINT RECEIPT'
+                : 'CREATE COURIER'}
             </Text>
           )}
         </Pressable>
 
         <View style={{ height: 50 }} />
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -1215,90 +2198,321 @@ export default function CreateCourierScreen({ navigation }) {
 // ============================================================
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
-  content: { padding: 20, paddingTop: 40, paddingBottom: 60 },
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f7fa',
+  },
+
+  content: {
+    padding: 20,
+    paddingTop: 40,
+    paddingBottom: 60,
+  },
+
   center: {
-    flex: 1, justifyContent: 'center', alignItems: 'center',
-    backgroundColor: '#f5f7fa', padding: 20,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f7fa',
+    padding: 20,
   },
-  loadingText: { marginTop: 12, color: '#666', fontSize: 14 },
-  errorText: { color: '#c0392b', fontSize: 16, textAlign: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  headerLogo: { width: 42, height: 42, marginRight: 9 },
-  backBtn: { color: '#008c8c', fontSize: 15, fontWeight: '600', marginRight: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#222', flex: 1 },
+
+  loadingText: {
+    marginTop: 12,
+    color: '#666',
+    fontSize: 14,
+  },
+
+  errorText: {
+    color: '#c0392b',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+
+  headerLogo: {
+    width: 42,
+    height: 42,
+    marginRight: 9,
+  },
+
+  backBtn: {
+    color: '#008c8c',
+    fontSize: 15,
+    fontWeight: '600',
+    marginRight: 16,
+  },
+
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#222',
+    flex: 1,
+  },
+
   posBadge: {
-    fontSize: 12, fontWeight: '700', color: '#008c8c',
-    backgroundColor: '#e6f4f4', paddingHorizontal: 10,
-    paddingVertical: 5, borderRadius: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#008c8c',
+    backgroundColor: '#e6f4f4',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
+
   printerSection: {
-    backgroundColor: '#fff', padding: 14, borderRadius: 10,
-    marginBottom: 12, borderWidth: 1, borderColor: '#ddd',
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
-  deviceText: { fontSize: 12, color: '#555', marginBottom: 8 },
+
+  deviceText: {
+    fontSize: 12,
+    color: '#555',
+    marginBottom: 8,
+  },
+
   discoverBtn: {
-    backgroundColor: '#008c8c', paddingVertical: 13,
-    borderRadius: 8, alignItems: 'center',
+    backgroundColor: '#008c8c',
+    paddingVertical: 13,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  discoverText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  discoverText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
   printerOption: {
-    flexDirection: 'row', alignItems: 'center', padding: 12,
-    borderRadius: 8, borderWidth: 1, borderColor: '#ddd', marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginBottom: 8,
   },
-  printerOptionActive: { backgroundColor: '#008c8c', borderColor: '#008c8c' },
-  printerAddress: { fontSize: 11, color: '#888', marginTop: 3 },
-  selectText: { color: '#008c8c', fontSize: 11, fontWeight: 'bold' },
+
+  printerOptionActive: {
+    backgroundColor: '#008c8c',
+    borderColor: '#008c8c',
+  },
+
+  printerAddress: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 3,
+  },
+
+  selectText: {
+    color: '#008c8c',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+
   selectedPrinter: {
-    fontSize: 12, color: '#008c8c', fontWeight: '600', marginTop: 10,
+    fontSize: 12,
+    color: '#008c8c',
+    fontWeight: '600',
+    marginTop: 10,
   },
-  hint: { fontSize: 11, color: '#888', marginTop: 7, lineHeight: 17 },
-  section: { fontSize: 14, fontWeight: '700', color: '#333', marginTop: 16, marginBottom: 8 },
+
+  hint: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 7,
+    lineHeight: 17,
+  },
+
+  section: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+
   input: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd',
-    borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, marginBottom: 10, color: '#222',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    marginBottom: 10,
+    color: '#222',
   },
-  textArea: { minHeight: 85, textAlignVertical: 'top' },
-  optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+
+  textArea: {
+    minHeight: 85,
+    textAlignVertical: 'top',
+  },
+
+  optionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 8,
+  },
+
   optionBtn: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd',
-    borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14,
-    marginRight: 8, marginBottom: 8, minWidth: 100,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginRight: 8,
+    marginBottom: 8,
+    minWidth: 100,
   },
-  optionBtnActive: { backgroundColor: '#008c8c', borderColor: '#008c8c' },
-  optionText: { fontSize: 13, fontWeight: '600', color: '#333' },
-  optionPrice: { fontSize: 11, color: '#888', marginTop: 3 },
-  optionTextActive: { color: '#fff' },
+
+  optionBtnActive: {
+    backgroundColor: '#008c8c',
+    borderColor: '#008c8c',
+  },
+
+  optionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+
+  optionPrice: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 3,
+  },
+
+  optionTextActive: {
+    color: '#fff',
+  },
+
   pickerField: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd',
-    borderRadius: 8, paddingHorizontal: 14, paddingVertical: 15,
-    marginBottom: 10, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 15,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  pickerIcon: { fontSize: 20, marginRight: 12 },
-  pickerValue: { flex: 1, fontSize: 15, fontWeight: '600', color: '#333' },
-  pickerAction: { fontSize: 10, fontWeight: '700', color: '#008c8c' },
+
+  pickerIcon: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+
+  pickerValue: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+  },
+
+  pickerAction: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#008c8c',
+  },
+
   summary: {
-    backgroundColor: '#fff', padding: 16, borderRadius: 10,
-    marginTop: 8, marginBottom: 8, borderWidth: 1, borderColor: '#eee',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 10,
+    marginTop: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
   },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7 },
-  summaryLabel: { fontSize: 14, color: '#666' },
-  summaryValue: { fontSize: 14, fontWeight: '600', color: '#333' },
-  summaryTotal: { borderTopWidth: 1, borderTopColor: '#eee', marginTop: 6, paddingTop: 12 },
-  summaryTotalLabel: { fontSize: 16, fontWeight: '700', color: '#333' },
-  summaryTotalValue: { fontSize: 19, fontWeight: 'bold', color: '#008c8c' },
+
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 7,
+  },
+
+  summaryLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+
+  summaryTotal: {
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    marginTop: 6,
+    paddingTop: 12,
+  },
+
+  summaryTotalLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333',
+  },
+
+  summaryTotalValue: {
+    fontSize: 19,
+    fontWeight: 'bold',
+    color: '#008c8c',
+  },
+
   submitBtn: {
-    backgroundColor: '#008c8c', paddingVertical: 17,
-    borderRadius: 10, alignItems: 'center', marginTop: 25,
+    backgroundColor: '#008c8c',
+    paddingVertical: 17,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 25,
   },
-  submitBtnPressed: { backgroundColor: '#006e6e' },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  loadingButton: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+
+  submitBtnPressed: {
+    backgroundColor: '#006e6e',
+  },
+
+  submitBtnDisabled: {
+    opacity: 0.6,
+  },
+
+  submitText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  loadingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
   retryBtn: {
-    backgroundColor: '#008c8c', paddingHorizontal: 25,
-    paddingVertical: 12, borderRadius: 8, marginTop: 20, marginBottom: 15,
+    backgroundColor: '#008c8c',
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 20,
+    marginBottom: 15,
   },
-  retryText: { color: '#fff', fontWeight: 'bold' },
+
+  retryText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
 });
